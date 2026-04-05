@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>web-model-bridge</title>
+  <link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>web-model-bridge</h1>
+      <p class="subtitle">Dashboard</p>
+    </header>
+    <section class="api-url">
+      <label>API Base URL</label>
+      <div class="url-box">
+        <code id="api-url"></code>
+        <button onclick="copyUrl()" id="copy-btn">Copy</button>
+      </div>
+    </section>
+    <section class="providers">
+      <h2>Providers</h2>
+      <div id="provider-list">Loading...</div>
+    </section>
+    <section class="stats">
+      <h2>Status</h2>
+      <div id="health-info">Loading...</div>
+    </section>
+  </div>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>
