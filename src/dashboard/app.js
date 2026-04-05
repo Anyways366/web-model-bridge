@@ -2,26 +2,32 @@ var origin = window.location.origin;
 document.getElementById('openai-url').textContent = origin + '/v1';
 document.getElementById('anthropic-url').textContent = origin;
 
+// Toast notification
 function showToast(msg) {
   var t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(function() { t.classList.remove('show'); }, 2000);
+  setTimeout(function () {
+    t.classList.remove('show');
+  }, 2000);
 }
 
-function copyText(elId) {
-  var text = document.getElementById(elId).textContent;
-  navigator.clipboard.writeText(text).then(function() {
+// Copy URL — uses data-target attribute instead of inline onclick
+function copyText(targetId) {
+  var text = document.getElementById(targetId).textContent;
+  navigator.clipboard.writeText(text).then(function () {
     showToast('Copied to clipboard!');
   });
 }
 
-function esc(s) {
-  var d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+// Bind copy buttons via data-target (no inline handlers)
+document.querySelectorAll('.btn-copy[data-target]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    copyText(btn.getAttribute('data-target'));
+  });
+});
 
+// Load providers list
 async function loadProviders() {
   try {
     var res = await fetch('/webmodel/providers');
@@ -30,16 +36,23 @@ async function loadProviders() {
     var countEl = document.getElementById('provider-count');
 
     if (!data.providers || data.providers.length === 0) {
-      list.innerHTML = '<div class="empty">No providers configured.</div>';
+      list.textContent = '';
+      var emptyDiv = document.createElement('div');
+      emptyDiv.className = 'empty';
+      emptyDiv.textContent = 'No providers configured.';
+      list.appendChild(emptyDiv);
       countEl.textContent = '0 / 0';
       return;
     }
 
-    var authCount = data.providers.filter(function(p) { return p.authenticated; }).length;
+    var authCount = data.providers.filter(function (p) {
+      return p.authenticated;
+    }).length;
     countEl.textContent = authCount + ' / ' + data.providers.length + ' active';
 
-    list.innerHTML = '';
-    data.providers.forEach(function(p) {
+    list.textContent = '';
+
+    data.providers.forEach(function (p) {
       var row = document.createElement('div');
       row.className = 'provider-row';
 
@@ -47,7 +60,8 @@ async function loadProviders() {
       left.className = 'provider-left';
 
       var dot = document.createElement('div');
-      dot.className = 'status-indicator ' + (p.authenticated ? 'active' : 'inactive');
+      dot.className =
+        'status-indicator ' + (p.authenticated ? 'active' : 'inactive');
       left.appendChild(dot);
 
       var nameEl = document.createElement('span');
@@ -74,7 +88,9 @@ async function loadProviders() {
         var btn = document.createElement('button');
         btn.className = 'btn-login';
         btn.textContent = 'Login';
-        btn.addEventListener('click', function() { loginProvider(p.id); });
+        btn.addEventListener('click', function () {
+          loginProvider(p.id);
+        });
         right.appendChild(btn);
       }
 
@@ -82,11 +98,16 @@ async function loadProviders() {
       list.appendChild(row);
     });
   } catch (err) {
-    document.getElementById('provider-list').innerHTML =
-      '<div class="error">Failed to load: ' + esc(err.message) + '</div>';
+    var list = document.getElementById('provider-list');
+    list.textContent = '';
+    var errDiv = document.createElement('div');
+    errDiv.className = 'error';
+    errDiv.textContent = 'Failed to load: ' + err.message;
+    list.appendChild(errDiv);
   }
 }
 
+// Login flow
 async function loginProvider(providerId) {
   try {
     showToast('Opening login window for ' + providerId + '...');
@@ -104,23 +125,31 @@ async function loginProvider(providerId) {
   }
 }
 
+// Poll for login completion
 function pollLogin(providerId) {
-  var interval = setInterval(async function() {
+  var interval = setInterval(async function () {
     try {
       var res = await fetch('/webmodel/providers');
       var data = await res.json();
-      var provider = data.providers.find(function(p) { return p.id === providerId; });
+      var provider = data.providers.find(function (p) {
+        return p.id === providerId;
+      });
       if (provider && provider.authenticated) {
         clearInterval(interval);
         showToast(providerId + ' authenticated!');
         loadProviders();
         loadHealth();
       }
-    } catch (e) { /* retry */ }
+    } catch (e) {
+      /* retry */
+    }
   }, 2000);
-  setTimeout(function() { clearInterval(interval); }, 120000);
+  setTimeout(function () {
+    clearInterval(interval);
+  }, 120000);
 }
 
+// Load system health stats
 async function loadHealth() {
   try {
     var res = await fetch('/webmodel/health');
@@ -128,22 +157,35 @@ async function loadHealth() {
     var el = document.getElementById('health-info');
 
     var seconds = data.uptime || 0;
-    var uptime = seconds < 60 ? seconds + 's' :
-      seconds < 3600 ? Math.floor(seconds / 60) + 'm' :
-      Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+    var uptime =
+      seconds < 60
+        ? seconds + 's'
+        : seconds < 3600
+          ? Math.floor(seconds / 60) + 'm'
+          : Math.floor(seconds / 3600) +
+            'h ' +
+            Math.floor((seconds % 3600) / 60) +
+            'm';
 
-    var providerCount = Object.keys(data.providers || {}).length;
     var browserStatus = data.browser ? data.browser.status : 'unknown';
 
-    el.innerHTML = '';
+    el.textContent = '';
 
     var items = [
-      { label: 'Status', value: data.status || 'unknown', cls: data.status === 'healthy' ? 'green' : '' },
+      {
+        label: 'Status',
+        value: data.status || 'unknown',
+        cls: data.status === 'healthy' ? 'green' : '',
+      },
       { label: 'Uptime', value: uptime, cls: '' },
-      { label: 'Browser', value: browserStatus, cls: browserStatus === 'running' ? 'green' : '' },
+      {
+        label: 'Browser',
+        value: browserStatus,
+        cls: browserStatus === 'running' ? 'green' : '',
+      },
     ];
 
-    items.forEach(function(item) {
+    items.forEach(function (item) {
       var div = document.createElement('div');
       div.className = 'stat-item';
 
@@ -160,11 +202,19 @@ async function loadHealth() {
       el.appendChild(div);
     });
   } catch (e) {
-    document.getElementById('health-info').innerHTML = '<div class="error">Unable to reach server</div>';
+    var el = document.getElementById('health-info');
+    el.textContent = '';
+    var errDiv = document.createElement('div');
+    errDiv.className = 'error';
+    errDiv.textContent = 'Unable to reach server';
+    el.appendChild(errDiv);
   }
 }
 
-// Initial load + auto-refresh
+// Initial load + auto-refresh every 10s
 loadProviders();
 loadHealth();
-setInterval(function() { loadProviders(); loadHealth(); }, 10000);
+setInterval(function () {
+  loadProviders();
+  loadHealth();
+}, 10000);

@@ -19,10 +19,10 @@
   </nav>
 
   <main class="container">
-    <!-- API URL Card -->
-    <section class="card api-card">
+    <!-- API Endpoints Card -->
+    <section class="card">
       <div class="card-header">
-        <h2>API Endpoint</h2>
+        <h2>API Endpoints</h2>
         <span class="badge">Ready</span>
       </div>
       <div class="card-body">
@@ -30,14 +30,14 @@
           <label>OpenAI Format <span class="hint">(OpenClaw, Cursor, Open WebUI)</span></label>
           <div class="url-box">
             <code id="openai-url"></code>
-            <button onclick="copyText('openai-url')" class="btn-copy">Copy</button>
+            <button class="btn-copy" data-target="openai-url">Copy</button>
           </div>
         </div>
         <div class="endpoint-group">
           <label>Anthropic Format <span class="hint">(Claude Code)</span></label>
           <div class="url-box">
             <code id="anthropic-url"></code>
-            <button onclick="copyText('anthropic-url')" class="btn-copy">Copy</button>
+            <button class="btn-copy" data-target="anthropic-url">Copy</button>
           </div>
         </div>
       </div>
@@ -54,7 +54,7 @@
       </div>
     </section>
 
-    <!-- Health Card -->
+    <!-- System Health Card -->
     <section class="card">
       <div class="card-header">
         <h2>System</h2>
