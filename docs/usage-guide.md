@@ -16,7 +16,7 @@ npx web-model-bridge
 ```
   ✓ Server running at http://localhost:3456
   ✓ API Base: http://localhost:3456/v1
-  ✓ 3 providers, 0 authenticated
+  ✓ 11 providers, 0 authenticated
   ✓ Dashboard: http://localhost:3456 (opening in browser)
 
   No providers authenticated yet.
@@ -25,19 +25,29 @@ npx web-model-bridge
 
 ### 第二步：在 Dashboard 登录 Web 模型
 
-浏览器会自动打开 Dashboard（http://localhost:3456）。你会看到三个 Provider：
+浏览器会自动打开 Dashboard（http://localhost:3456）。你会看到 11 个 Provider：
 
-| Provider | 网站 | 说明 |
-|----------|------|------|
-| Claude Web | claude.ai | 需要 Claude 账号 |
-| ChatGPT Web | chatgpt.com | 需要 OpenAI 账号 |
-| DeepSeek Web | chat.deepseek.com | 需要 DeepSeek 账号 |
+| Provider | 网站 | 免费模型 |
+|----------|------|---------|
+| Claude Web | claude.ai | Sonnet 4.6, Haiku 4.5 |
+| ChatGPT Web | chatgpt.com | GPT-5.3, GPT-5.4 Mini |
+| DeepSeek Web | chat.deepseek.com | DeepSeek V4, V4 Reasoner |
+| Kimi Web | kimi.moonshot.cn | Kimi K2.5 |
+| Qwen Web | chat.qwen.ai | Qwen 3.5 Plus, QwQ |
+| GLM Web | chatglm.cn | GLM-5 |
+| Grok Web | grok.com | Grok 3 |
+| Gemini Web | gemini.google.com | Gemini 3 Flash, 2.5 Pro |
+| Perplexity Web | perplexity.ai | Perplexity |
+| Doubao Web | doubao.com | Doubao Seed 2.0 Pro |
+| Xiaomimo Web | aistudio.xiaomimimo.com | MiMo V2 Pro |
 
 点击 **[Login]** 按钮 → 弹出登录页面 → 正常登录（和你平时上网一样）→ 登录完成后窗口自动关闭 → Dashboard 显示 ✓ 已认证。
 
-### 第三步：配置 OpenClaw 使用 web-model-bridge
+### 第三步：配置你的 AI 工具
 
-编辑 OpenClaw 的配置文件 `~/.openclaw/openclaw.json`，添加一个自定义 Provider：
+#### OpenClaw
+
+编辑 `~/.openclaw/openclaw.json`：
 
 ```json
 {
@@ -47,34 +57,28 @@ npx web-model-bridge
       "webmodel": {
         "baseUrl": "http://127.0.0.1:3456/v1",
         "apiKey": "not-needed",
+        "api": "openai-completions",
         "models": [
           {
             "id": "claude-web/claude-sonnet-4-6",
-            "name": "Claude Sonnet 4.6 (Web, Free)",
-            "api": "openai-completions",
-            "contextWindow": 200000,
-            "maxTokens": 8192
+            "name": "Claude Sonnet 4.6 (Free)",
+            "contextWindow": 1000000,
+            "maxTokens": 8192,
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
           },
           {
-            "id": "claude-web/claude-opus-4-6",
-            "name": "Claude Opus 4.6 (Web, Free)",
-            "api": "openai-completions",
-            "contextWindow": 200000,
-            "maxTokens": 8192
-          },
-          {
-            "id": "chatgpt-web/gpt-4o",
-            "name": "GPT-4o (Web, Free)",
-            "api": "openai-completions",
+            "id": "deepseek-web/deepseek-v4",
+            "name": "DeepSeek V4 (Free)",
             "contextWindow": 128000,
-            "maxTokens": 4096
+            "maxTokens": 8192,
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
           },
           {
-            "id": "deepseek-web/deepseek-chat",
-            "name": "DeepSeek Chat (Web, Free)",
-            "api": "openai-completions",
-            "contextWindow": 64000,
-            "maxTokens": 8192
+            "id": "qwen-web/qwen-3.5-plus",
+            "name": "Qwen 3.5 Plus (Free)",
+            "contextWindow": 262000,
+            "maxTokens": 8192,
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
           }
         ]
       }
@@ -83,75 +87,89 @@ npx web-model-bridge
 }
 ```
 
-> **说明**：`apiKey` 设为任意值（web-model-bridge 默认不需要 token）。如果你配置了 `--auth-token`，则填写对应的 token。
+#### Claude Code
 
-### 第四步：在 OpenClaw 中选择 Web 模型
+web-model-bridge 同时支持 Anthropic API 格式（`POST /v1/messages`），所以 Claude Code 可以直接对接：
 
 ```bash
-# 启动 OpenClaw
-openclaw
+# 注意：ANTHROPIC_BASE_URL 不要加 /v1，SDK 会自动拼接
+export ANTHROPIC_BASE_URL="http://localhost:3456"
+export ANTHROPIC_API_KEY="not-needed"
 
-# 选择模型时选择 "Claude Sonnet 4.6 (Web, Free)" 等
+# 启动 Claude Code
+claude
 ```
 
-OpenClaw 发送请求到 `http://127.0.0.1:3456/v1/chat/completions` → web-model-bridge 通过浏览器调用真实的 Web API → 返回 OpenAI 格式的响应 → OpenClaw 正常接收。
+Claude Code 会将请求发送到 `http://localhost:3456/v1/messages` → web-model-bridge 内部转换并路由到对应的 Web 模型。
 
-**零 token 消耗** — 因为请求是通过你的浏览器登录态发出的，走的是网页版的免费额度。
+模型名称使用 `{provider}/{model}` 格式，例如 `claude-web/claude-sonnet-4-6`。
+
+#### Cursor
+
+1. 打开 Settings → Models
+2. **Override OpenAI Base URL**: `http://localhost:3456/v1`
+3. **OpenAI API Key**: 任意值（如 `not-needed`）
+4. 点击 **+ Add Model**，输入模型 ID，例如：
+   - `claude-web/claude-sonnet-4-6`
+   - `deepseek-web/deepseek-v4`
+   - `qwen-web/qwen-3.5-plus`
+
+#### 其他支持 OpenAI API 的工具
+
+只要工具支持自定义 `base_url`，指向 `http://localhost:3456/v1` 即可。例如：
+- Open WebUI、LobeChat、ChatBox 等
 
 ---
 
-## 在其他工具中使用
+## 可用模型列表
 
-### Claude Code
+所有模型 ID 格式为 `{provider}/{model}`：
 
-在 Claude Code 的设置中配置自定义 API：
-```json
-{
-  "apiBase": "http://127.0.0.1:3456/v1"
-}
-```
-
-### Cursor
-
-Settings → Models → OpenAI API Base URL → `http://localhost:3456/v1`
-
-### Open WebUI
-
-设置 → Connections → OpenAI API → Base URL: `http://localhost:3456/v1`
-
-### 任何支持 OpenAI API 的工具
-
-只要工具支持自定义 `base_url`，指向 `http://localhost:3456/v1` 即可。
+| 模型 ID | 名称 | 上下文 | 平台 |
+|---------|------|--------|------|
+| `claude-web/claude-sonnet-4-6` | Claude Sonnet 4.6 | 1M | claude.ai |
+| `claude-web/claude-haiku-4-5` | Claude Haiku 4.5 | 200K | claude.ai |
+| `chatgpt-web/gpt-5.3` | GPT-5.3 | 128K | chatgpt.com |
+| `chatgpt-web/gpt-5.4-mini` | GPT-5.4 Mini | 128K | chatgpt.com |
+| `deepseek-web/deepseek-v4` | DeepSeek V4 | 128K | chat.deepseek.com |
+| `deepseek-web/deepseek-v4-reasoner` | DeepSeek V4 Reasoner | 128K | chat.deepseek.com |
+| `kimi-web/kimi-k2.5` | Kimi K2.5 | 256K | kimi.moonshot.cn |
+| `qwen-web/qwen-3.5-plus` | Qwen 3.5 Plus | 262K | chat.qwen.ai |
+| `qwen-web/qwq` | QwQ | 32K | chat.qwen.ai |
+| `glm-web/glm-5` | GLM-5 | 128K | chatglm.cn |
+| `grok-web/grok-3` | Grok 3 | 128K | grok.com |
+| `gemini-web/gemini-3-flash` | Gemini 3 Flash | 1M | gemini.google.com |
+| `gemini-web/gemini-2.5-pro` | Gemini 2.5 Pro | 1M | gemini.google.com |
+| `perplexity-web/perplexity-default` | Perplexity | 128K | perplexity.ai |
+| `doubao-web/doubao-seed-2.0-pro` | Doubao Seed 2.0 Pro | 256K | doubao.com |
+| `xiaomimo-web/mimo-v2-pro` | MiMo V2 Pro | 1M | aistudio.xiaomimimo.com |
 
 ---
 
-## 常驻后台运行
+## 支持的 API 格式
 
-如果你不想每次都手动启动：
+web-model-bridge 同时支持两种 API 格式：
 
-```bash
-# 注册为系统服务（开机自启）
-web-model-bridge install-service
+| 格式 | 端点 | 适用工具 |
+|------|------|---------|
+| OpenAI | `POST /v1/chat/completions` | OpenClaw, Cursor, Open WebUI, LobeChat |
+| Anthropic | `POST /v1/messages` | Claude Code |
 
-# 卸载
-web-model-bridge uninstall-service
-```
-
-> 注：系统服务功能计划在 Phase 2 实现。
+两种格式使用相同的模型 ID 和 Provider，只是请求/响应格式不同。
 
 ---
 
 ## 配置选项
 
-### 命令行选项
+### 命令行
 
 ```bash
-web-model-bridge                    # 默认启动
-web-model-bridge -p 8080            # 自定义端口
-web-model-bridge --host 0.0.0.0     # 允许远程访问（需配合 --auth-token）
-web-model-bridge --auth-token mysecret  # 设置访问密码
-web-model-bridge --no-open          # 不自动打开浏览器
-web-model-bridge --state-dir /path  # 自定义数据目录
+web-model-bridge                         # 默认启动
+web-model-bridge -p 8080                 # 自定义端口
+web-model-bridge --host 0.0.0.0          # 允许远程访问（需配合 --auth-token）
+web-model-bridge --auth-token mysecret   # 设置访问密码
+web-model-bridge --no-open               # 不自动打开浏览器
+web-model-bridge --state-dir /path       # 自定义数据目录
 ```
 
 ### 配置文件
@@ -162,16 +180,16 @@ web-model-bridge --state-dir /path  # 自定义数据目录
 server:
   port: 3456
   host: 127.0.0.1
-  authToken: null                # 设置后需 Bearer Token 访问
+  authToken: null
 
 browser:
-  idleShutdown: 300              # 无请求 5 分钟后关闭 Chrome 节省内存
+  idleShutdown: 300        # 无请求 5 分钟后关闭 Chrome 节省内存
 
 providers:
-  enabled:
+  enabled:                 # 可以只启用需要的 provider
     - claude-web
-    - chatgpt-web
     - deepseek-web
+    - qwen-web
 
 logging:
   level: info
@@ -179,39 +197,11 @@ logging:
 
 ---
 
-## 数据存储
-
-所有数据在 `~/.webmodel/`：
-
-```
-~/.webmodel/
-├── config.yml         # 配置文件
-├── auth.json          # Provider 认证状态
-├── chrome-profile/    # 专用 Chrome 登录数据（Cookie 持久化）
-└── logs/              # 日志
-```
-
----
-
 ## 故障排查
 
-### "Browser not connected" 错误
-Chrome 未启动或 CDP 连接失败。检查：
-- 系统已安装 Google Chrome
-- 没有其他进程锁定 Chrome profile 目录
-
-### Cookie 过期
-Dashboard 上 Provider 显示 ⚠ 已过期 → 点击 [重新登录] → 登录后自动恢复。
-
-### 端口被占用
-web-model-bridge 默认用 3456 端口。如果冲突：
-```bash
-web-model-bridge -p 8080
-```
-
-### 查看日志
-```bash
-web-model-bridge -v   # verbose 模式
-# 或查看日志文件
-cat ~/.webmodel/logs/bridge.log
-```
+| 问题 | 解决方案 |
+|------|---------|
+| "Browser not connected" | 确认已安装 Google Chrome |
+| Cookie 过期 | Dashboard 上点击 [重新登录] |
+| 端口被占用 | `web-model-bridge -p 8080` |
+| Claude Code 连接失败 | 确认 `ANTHROPIC_BASE_URL` 不带 `/v1` 后缀 |
