@@ -99,6 +99,16 @@ export function loadConfig(opts: LoadOptions): BridgeConfig {
   if (opts.authToken !== undefined) config.server.authToken = opts.authToken;
   if (opts.verbose) config.logging.level = 'debug';
 
+  // Environment variable overrides (Docker-friendly)
+  if (process.env.WMB_PORT) config.server.port = parseInt(process.env.WMB_PORT, 10);
+  if (process.env.WMB_HOST) config.server.host = process.env.WMB_HOST;
+  if (process.env.WMB_AUTH_TOKEN) config.server.authToken = process.env.WMB_AUTH_TOKEN;
+  if (process.env.WMB_LOG_LEVEL) config.logging.level = process.env.WMB_LOG_LEVEL as any;
+  if (process.env.WMB_STATE_DIR) {
+    config.browser.profileDir = join(process.env.WMB_STATE_DIR, 'chrome-profile');
+    config.logging.file = join(process.env.WMB_STATE_DIR, 'logs', 'bridge.log');
+  }
+
   return config;
 }
 

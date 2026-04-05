@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { ProviderRegistry } from '../core/registry.js';
 import { AuthStore } from '../auth/store.js';
 import type { BrowserStatus } from '../browser/manager.js';
+import type { MetricsCollector } from '../core/metrics.js';
 
 export interface ManagementDeps {
   registry: ProviderRegistry;
@@ -9,6 +10,7 @@ export interface ManagementDeps {
   onLogin?: (providerId: string) => Promise<{ status: string }>;
   getBrowserStatus?: () => BrowserStatus;
   startTime?: number;
+  metrics?: MetricsCollector;
 }
 
 export function managementRoutes(deps: ManagementDeps): Hono {
@@ -78,6 +80,17 @@ export function managementRoutes(deps: ManagementDeps): Hono {
         statuses.map(s => [s.id, { authenticated: s.authenticated, models: s.modelCount }])
       ),
     });
+  });
+
+  app.get('/webmodel/metrics', async (c) => {
+    if (!deps.metrics) return c.json({ error: 'Metrics not available' }, 503);
+    return c.json(deps.metrics.getSummary());
+  });
+
+  app.get('/webmodel/logs', async (c) => {
+    if (!deps.metrics) return c.json({ error: 'Metrics not available' }, 503);
+    const count = parseInt(c.req.query('count') ?? '50', 10);
+    return c.json({ logs: deps.metrics.getRecent(count) });
   });
 
   return app;

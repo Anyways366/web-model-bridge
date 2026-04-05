@@ -90,4 +90,17 @@ server:
     const config = loadConfig({ stateDir: testDir, authToken: 'cli-token' });
     expect(config.server.authToken).toBe('cli-token');
   });
+
+  it('reads environment variables', () => {
+    process.env.WMB_PORT = '9999';
+    process.env.WMB_AUTH_TOKEN = 'env-token';
+    try {
+      const config = loadConfig({ stateDir: testDir });
+      expect(config.server.port).toBe(9999);
+      expect(config.server.authToken).toBe('env-token');
+    } finally {
+      delete process.env.WMB_PORT;
+      delete process.env.WMB_AUTH_TOKEN;
+    }
+  });
 });
