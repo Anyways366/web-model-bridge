@@ -10,6 +10,14 @@ import { BrowserManager } from './browser/manager.js';
 import { ClaudeProvider } from './providers/claude/index.js';
 import { ChatGPTProvider } from './providers/chatgpt/index.js';
 import { DeepSeekProvider } from './providers/deepseek/index.js';
+import { KimiProvider } from './providers/kimi-web/index.js';
+import { QwenProvider } from './providers/qwen-web/index.js';
+import { GLMProvider } from './providers/glm-web/index.js';
+import { GrokProvider } from './providers/grok-web/index.js';
+import { GeminiProvider } from './providers/gemini-web/index.js';
+import { PerplexityProvider } from './providers/perplexity-web/index.js';
+import { DoubaoProvider } from './providers/doubao-web/index.js';
+import { XiaomimoProvider } from './providers/xiaomimo-web/index.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
@@ -63,6 +71,30 @@ program
     }
     if (enabled.has('deepseek-web')) {
       registry.register(new DeepSeekProvider(authStore, browserFetch));
+    }
+    if (enabled.has('kimi-web')) {
+      registry.register(new KimiProvider(authStore, browserFetch));
+    }
+    if (enabled.has('qwen-web')) {
+      registry.register(new QwenProvider(authStore, browserFetch));
+    }
+    if (enabled.has('glm-web')) {
+      registry.register(new GLMProvider(authStore, browserFetch));
+    }
+    if (enabled.has('grok-web')) {
+      registry.register(new GrokProvider(authStore, browserFetch));
+    }
+    if (enabled.has('gemini-web')) {
+      registry.register(new GeminiProvider(authStore, browserFetch));
+    }
+    if (enabled.has('perplexity-web')) {
+      registry.register(new PerplexityProvider(authStore, browserFetch));
+    }
+    if (enabled.has('doubao-web')) {
+      registry.register(new DoubaoProvider(authStore, browserFetch));
+    }
+    if (enabled.has('xiaomimo-web')) {
+      registry.register(new XiaomimoProvider(authStore, browserFetch));
     }
 
     const app = createApp({

@@ -34,8 +34,8 @@ export class DeepSeekProvider extends BaseProvider {
 
   async models(): Promise<ModelInfo[]> {
     return [
-      { id: 'deepseek-chat', name: 'DeepSeek Chat', contextWindow: 64000, maxOutput: 8192 },
-      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', contextWindow: 64000, maxOutput: 8192 },
+      { id: 'deepseek-v4', name: 'DeepSeek V4', contextWindow: 128000, maxOutput: 8192 },
+      { id: 'deepseek-v4-reasoner', name: 'DeepSeek V4 Reasoner', contextWindow: 128000, maxOutput: 8192 },
     ];
   }
 

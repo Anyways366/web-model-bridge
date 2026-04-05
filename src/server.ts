@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { openaiRoutes } from './routes/openai-compat.js';
+import { anthropicRoutes } from './routes/anthropic-compat.js';
 import { managementRoutes, type ManagementDeps } from './routes/management.js';
 import { ProviderRegistry } from './core/registry.js';
 import { AuthStore } from './auth/store.js';
@@ -63,6 +64,7 @@ export function createApp(opts: AppOptions): Hono {
 
   // Mount API routes
   app.route('/', openaiRoutes(opts.registry));
+  app.route('/', anthropicRoutes(opts.registry));
 
   const mgmtDeps: ManagementDeps = {
     registry: opts.registry,

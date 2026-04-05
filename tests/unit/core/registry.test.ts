@@ -13,14 +13,14 @@ describe('ProviderRegistry', () => {
     claude = new MockProvider('claude-web', {
       authenticated: true,
       models: [
-        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 200000, maxOutput: 8192 },
-        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', contextWindow: 200000, maxOutput: 8192 },
+        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 1000000, maxOutput: 8192 },
+        { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', contextWindow: 200000, maxOutput: 8192 },
       ],
     });
     deepseek = new MockProvider('deepseek-web', {
       authenticated: false,
       models: [
-        { id: 'deepseek-chat', name: 'DeepSeek Chat', contextWindow: 64000, maxOutput: 8192 },
+        { id: 'deepseek-v4', name: 'DeepSeek V4', contextWindow: 128000, maxOutput: 8192 },
       ],
     });
     registry.register(claude);
@@ -34,9 +34,9 @@ describe('ProviderRegistry', () => {
   });
 
   it('resolves provider with different model', () => {
-    const result = registry.resolve('deepseek-web/deepseek-chat');
+    const result = registry.resolve('deepseek-web/deepseek-v4');
     expect(result.provider).toBe(deepseek);
-    expect(result.model).toBe('deepseek-chat');
+    expect(result.model).toBe('deepseek-v4');
   });
 
   it('throws InvalidModelError for unknown provider', () => {
@@ -55,7 +55,7 @@ describe('ProviderRegistry', () => {
     const models = await registry.allModels();
     expect(models).toHaveLength(2);
     expect(models[0].id).toBe('claude-web/claude-sonnet-4-6');
-    expect(models[1].id).toBe('claude-web/claude-opus-4-6');
+    expect(models[1].id).toBe('claude-web/claude-haiku-4-5');
   });
 
   it('providerStatus returns status for all providers', async () => {

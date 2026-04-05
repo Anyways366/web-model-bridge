@@ -44,7 +44,11 @@ export function defaultConfig(stateDir: string): BridgeConfig {
       loginTimeout: 120,
     },
     providers: {
-      enabled: ['claude-web', 'chatgpt-web', 'deepseek-web'],
+      enabled: [
+        'claude-web', 'chatgpt-web', 'deepseek-web',
+        'kimi-web', 'qwen-web', 'glm-web', 'grok-web',
+        'gemini-web', 'perplexity-web', 'doubao-web', 'xiaomimo-web',
+      ],
       defaultModel: 'claude-web/claude-sonnet-4-6',
     },
     toolCalling: {

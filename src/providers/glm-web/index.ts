@@ -1,15 +1,15 @@
 import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
-import { normalizeChatGPTSSE } from './stream.js';
-import { CHATGPT_WEB_BASE_URL } from './client.js';
+import { normalizeStandardSSE } from '../_shared/standard-stream.js';
+import { GLM_WEB_BASE_URL } from './client.js';
 import { AuthStore } from '../../auth/store.js';
 
-export class ChatGPTProvider extends BaseProvider {
+export class GLMProvider extends BaseProvider {
   readonly info: ProviderInfo = {
-    id: 'chatgpt-web',
-    name: 'ChatGPT Web',
-    website: 'https://chatgpt.com',
-    loginUrl: 'https://chatgpt.com/auth/login',
+    id: 'glm-web',
+    name: 'GLM Web',
+    website: 'https://chatglm.cn',
+    loginUrl: 'https://chatglm.cn',
     needsBrowser: true,
   };
 
@@ -34,8 +34,7 @@ export class ChatGPTProvider extends BaseProvider {
 
   async models(): Promise<ModelInfo[]> {
     return [
-      { id: 'gpt-5.3', name: 'GPT-5.3', contextWindow: 128000, maxOutput: 4096 },
-      { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', contextWindow: 128000, maxOutput: 4096 },
+      { id: 'glm-5', name: 'GLM-5', contextWindow: 128000, maxOutput: 4096 },
     ];
   }
 
@@ -45,20 +44,15 @@ export class ChatGPTProvider extends BaseProvider {
       return;
     }
 
-    const response = await this.browserFetch(
-      `${CHATGPT_WEB_BASE_URL}/backend-api/conversation`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: req.model,
-          messages: req.messages.map(m => ({
-            author: { role: m.role },
-            content: { content_type: 'text', parts: [m.content] },
-          })),
-        }),
-      }
-    );
+    const response = await this.browserFetch(`${GLM_WEB_BASE_URL}/api/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: req.model,
+        messages: req.messages,
+        stream: true,
+      }),
+    });
 
     if (!response.body) {
       yield { type: 'error', message: 'No response body' };
@@ -80,16 +74,14 @@ export class ChatGPTProvider extends BaseProvider {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        const events = normalizeChatGPTSSE(trimmed);
-        for (const event of events) {
+        for (const event of normalizeStandardSSE(trimmed)) {
           yield event;
         }
       }
     }
 
     if (buffer.trim()) {
-      const events = normalizeChatGPTSSE(buffer.trim());
-      for (const event of events) {
+      for (const event of normalizeStandardSSE(buffer.trim())) {
         yield event;
       }
     }

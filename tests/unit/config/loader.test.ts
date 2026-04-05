@@ -76,11 +76,14 @@ server:
     expect(config.logging.file).toBe('/custom/dir/logs/bridge.log');
   });
 
-  it('providers.enabled defaults to all three MVP providers', () => {
+  it('providers.enabled defaults to all providers', () => {
     const config = loadConfig({ stateDir: testDir });
-    expect(config.providers.enabled).toEqual([
-      'claude-web', 'chatgpt-web', 'deepseek-web',
-    ]);
+    expect(config.providers.enabled).toContain('claude-web');
+    expect(config.providers.enabled).toContain('chatgpt-web');
+    expect(config.providers.enabled).toContain('deepseek-web');
+    expect(config.providers.enabled).toContain('kimi-web');
+    expect(config.providers.enabled).toContain('qwen-web');
+    expect(config.providers.enabled.length).toBe(11);
   });
 
   it('authToken override from CLI', () => {
