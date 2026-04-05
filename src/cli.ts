@@ -18,6 +18,22 @@ import { GeminiProvider } from './providers/gemini-web/index.js';
 import { PerplexityProvider } from './providers/perplexity-web/index.js';
 import { DoubaoProvider } from './providers/doubao-web/index.js';
 import { XiaomimoProvider } from './providers/xiaomimo-web/index.js';
+import type { BaseProvider } from './core/provider.js';
+
+// Provider registry map: id → constructor
+const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, init: RequestInit) => Promise<Response>) => BaseProvider> = {
+  'claude-web': ClaudeProvider,
+  'chatgpt-web': ChatGPTProvider,
+  'deepseek-web': DeepSeekProvider,
+  'kimi-web': KimiProvider,
+  'qwen-web': QwenProvider,
+  'glm-web': GLMProvider,
+  'grok-web': GrokProvider,
+  'gemini-web': GeminiProvider,
+  'perplexity-web': PerplexityProvider,
+  'doubao-web': DoubaoProvider,
+  'xiaomimo-web': XiaomimoProvider,
+};
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
@@ -61,40 +77,12 @@ program
     const browserFetch = (url: string, init: RequestInit) =>
       browserManager.fetchInBrowser(url, init);
 
-    // Register providers with browser fetch capability
+    // Register enabled providers
     const enabled = new Set(config.providers.enabled);
-    if (enabled.has('claude-web')) {
-      registry.register(new ClaudeProvider(authStore, browserFetch));
-    }
-    if (enabled.has('chatgpt-web')) {
-      registry.register(new ChatGPTProvider(authStore, browserFetch));
-    }
-    if (enabled.has('deepseek-web')) {
-      registry.register(new DeepSeekProvider(authStore, browserFetch));
-    }
-    if (enabled.has('kimi-web')) {
-      registry.register(new KimiProvider(authStore, browserFetch));
-    }
-    if (enabled.has('qwen-web')) {
-      registry.register(new QwenProvider(authStore, browserFetch));
-    }
-    if (enabled.has('glm-web')) {
-      registry.register(new GLMProvider(authStore, browserFetch));
-    }
-    if (enabled.has('grok-web')) {
-      registry.register(new GrokProvider(authStore, browserFetch));
-    }
-    if (enabled.has('gemini-web')) {
-      registry.register(new GeminiProvider(authStore, browserFetch));
-    }
-    if (enabled.has('perplexity-web')) {
-      registry.register(new PerplexityProvider(authStore, browserFetch));
-    }
-    if (enabled.has('doubao-web')) {
-      registry.register(new DoubaoProvider(authStore, browserFetch));
-    }
-    if (enabled.has('xiaomimo-web')) {
-      registry.register(new XiaomimoProvider(authStore, browserFetch));
+    for (const [id, Ctor] of Object.entries(PROVIDER_MAP)) {
+      if (enabled.has(id)) {
+        registry.register(new Ctor(authStore, browserFetch));
+      }
     }
 
     const app = createApp({

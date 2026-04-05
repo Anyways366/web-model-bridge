@@ -138,6 +138,43 @@ describe('POST /v1/messages (Anthropic)', () => {
     expect(res.status).toBe(403);
   });
 
+  it('passes with x-api-key header (Anthropic SDK style)', async () => {
+    ctx = createTestContext({ authToken: 'secret' });
+    const res = await ctx.app.request('/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': 'secret',
+      },
+      body: JSON.stringify({
+        model: 'claude-web/claude-sonnet-4-6',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('handles system as array of content blocks', async () => {
+    ctx = createTestContext();
+    const res = await ctx.app.request('/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-web/claude-sonnet-4-6',
+        max_tokens: 1024,
+        system: [
+          { type: 'text', text: 'You are helpful.' },
+          { type: 'text', text: ' Be concise.', cache_control: { type: 'ephemeral' } },
+        ],
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.type).toBe('message');
+  });
+
   it('streaming has correct event order', async () => {
     const provider = new DelayedMockProvider([
       { type: 'text_delta', delta: 'Hi' },

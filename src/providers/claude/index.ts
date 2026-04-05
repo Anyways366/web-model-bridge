@@ -1,6 +1,7 @@
 import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
 import { normalizeClaudeSSE } from './stream.js';
+import { readSSE } from '../_shared/sse-reader.js';
 import { CLAUDE_WEB_BASE_URL } from './client.js';
 import { AuthStore } from '../../auth/store.js';
 
@@ -58,38 +59,6 @@ export class ClaudeProvider extends BaseProvider {
       }
     );
 
-    if (!response.body) {
-      yield { type: 'error', message: 'No response body' };
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const events = normalizeClaudeSSE(trimmed);
-        for (const event of events) {
-          yield event;
-        }
-      }
-    }
-
-    if (buffer.trim()) {
-      const events = normalizeClaudeSSE(buffer.trim());
-      for (const event of events) {
-        yield event;
-      }
-    }
+    yield* readSSE(response, normalizeClaudeSSE);
   }
 }

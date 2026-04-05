@@ -27,7 +27,8 @@ export function createApp(opts: AppOptions): Hono {
   if (opts.authToken) {
     const checkToken = async (c: any, next: any) => {
       const authHeader = c.req.header('Authorization');
-      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      const xApiKey = c.req.header('x-api-key');
+      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : xApiKey ?? null;
       if (token !== opts.authToken) {
         const res = errorToHttpResponse(new InvalidTokenError());
         return c.json(res.body, res.status as any);

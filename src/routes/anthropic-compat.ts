@@ -56,7 +56,14 @@ export function anthropicRoutes(registry: ProviderRegistry): Hono {
     // Convert Anthropic messages to internal format
     const messages: Message[] = [];
     if (body.system) {
-      messages.push({ role: 'system', content: typeof body.system === 'string' ? body.system : '' });
+      const systemText = typeof body.system === 'string'
+        ? body.system
+        : Array.isArray(body.system)
+          ? body.system.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
+          : '';
+      if (systemText) {
+        messages.push({ role: 'system', content: systemText });
+      }
     }
     for (const msg of body.messages) {
       const content = typeof msg.content === 'string'
