@@ -1,17 +1,19 @@
 import { Hono } from 'hono';
 import { ProviderRegistry } from '../core/registry.js';
 import { AuthStore } from '../auth/store.js';
-
-const startTime = Date.now();
+import type { BrowserStatus } from '../browser/manager.js';
 
 export interface ManagementDeps {
   registry: ProviderRegistry;
   authStore: AuthStore;
   onLogin?: (providerId: string) => Promise<{ status: string }>;
+  getBrowserStatus?: () => BrowserStatus;
+  startTime?: number;
 }
 
 export function managementRoutes(deps: ManagementDeps): Hono {
   const { registry, authStore, onLogin } = deps;
+  const routeStartTime = deps.startTime ?? Date.now();
   const app = new Hono();
 
   app.get('/webmodel/providers', async (c) => {
@@ -20,7 +22,12 @@ export function managementRoutes(deps: ManagementDeps): Hono {
   });
 
   app.post('/webmodel/auth/login', async (c) => {
-    const body = await c.req.json<{ providerId: string }>();
+    let body: { providerId: string };
+    try {
+      body = await c.req.json<{ providerId: string }>();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
     const provider = registry.getProvider(body.providerId);
     if (!provider) {
       return c.json({ error: 'Unknown provider' }, 404);
@@ -31,31 +38,42 @@ export function managementRoutes(deps: ManagementDeps): Hono {
     }
 
     try {
-      const result = await onLogin(body.providerId);
-      return c.json({ ...result, status: 'login_started', providerId: body.providerId });
+      await onLogin(body.providerId);
+      return c.json({ status: 'login_started', providerId: body.providerId });
     } catch (err) {
       return c.json({ error: (err as Error).message }, 500);
     }
   });
 
   app.post('/webmodel/auth/check', async (c) => {
-    const body = await c.req.json<{ providerId: string }>();
+    let body: { providerId: string };
+    try {
+      body = await c.req.json<{ providerId: string }>();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
     const status = authStore.getStatus(body.providerId);
     return c.json(status);
   });
 
   app.post('/webmodel/auth/logout', async (c) => {
-    const body = await c.req.json<{ providerId: string }>();
+    let body: { providerId: string };
+    try {
+      body = await c.req.json<{ providerId: string }>();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
     authStore.clearStatus(body.providerId);
     return c.json({ status: 'logged_out', providerId: body.providerId });
   });
 
   app.get('/webmodel/health', async (c) => {
     const statuses = await registry.providerStatus();
+    const browserStatus = deps.getBrowserStatus ? deps.getBrowserStatus() : 'stopped';
     return c.json({
       status: 'healthy',
-      uptime: Math.floor((Date.now() - startTime) / 1000),
-      browser: { status: 'stopped' },
+      uptime: Math.floor((Date.now() - routeStartTime) / 1000),
+      browser: { status: browserStatus },
       providers: Object.fromEntries(
         statuses.map(s => [s.id, { authenticated: s.authenticated, models: s.modelCount }])
       ),

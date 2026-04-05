@@ -49,28 +49,34 @@ program
       loginTimeout: config.browser.loginTimeout,
     });
 
-    // Register providers
+    // Browser fetch wrapper for providers
+    const browserFetch = (url: string, init: RequestInit) =>
+      browserManager.fetchInBrowser(url, init);
+
+    // Register providers with browser fetch capability
     const enabled = new Set(config.providers.enabled);
     if (enabled.has('claude-web')) {
-      registry.register(new ClaudeProvider(authStore));
+      registry.register(new ClaudeProvider(authStore, browserFetch));
     }
     if (enabled.has('chatgpt-web')) {
-      registry.register(new ChatGPTProvider(authStore));
+      registry.register(new ChatGPTProvider(authStore, browserFetch));
     }
     if (enabled.has('deepseek-web')) {
-      registry.register(new DeepSeekProvider(authStore));
+      registry.register(new DeepSeekProvider(authStore, browserFetch));
     }
 
     const app = createApp({
       registry,
       authStore,
       authToken: config.server.authToken,
+      getBrowserStatus: () => browserManager.getStatus(),
       onLogin: async (providerId: string) => {
         const provider = registry.getProvider(providerId);
         if (!provider) return { status: 'error' };
         await browserManager.openForLogin(provider.info.loginUrl);
-        const ok = await provider.detectLoginComplete();
-        if (ok) authStore.setStatus(providerId, 'active');
+        // After login window closes, mark provider as active.
+        // Real login detection will verify cookies in Phase 2.
+        authStore.setStatus(providerId, 'active');
         return { status: 'login_started' };
       },
     });

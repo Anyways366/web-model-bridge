@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs';
+import type { BrowserContext, Page } from 'playwright-core';
 
 export type BrowserStatus = 'running' | 'idle' | 'stopped';
 
 export class BrowserManager {
-  private context: any = null;
+  private context: BrowserContext | null = null;
   private _status: BrowserStatus = 'stopped';
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -16,7 +17,7 @@ export class BrowserManager {
     },
   ) {}
 
-  async ensureBrowser(): Promise<any> {
+  async ensureBrowser(): Promise<BrowserContext> {
     if (this.context) {
       this.resetIdleTimer();
       return this.context;
@@ -45,12 +46,16 @@ export class BrowserManager {
     const ctx = await this.ensureBrowser();
     const page = ctx.pages()[0] || await ctx.newPage();
 
+    // Use page.evaluate to execute fetch within browser context (carries cookies).
+    // NOTE: This buffers the full response. For true streaming, CDP-level interception
+    // (page.route or Fetch.requestPaused) would be needed. Acceptable for MVP since
+    // most web model responses are < 100KB and latency is dominated by model inference.
     const result = await page.evaluate(
-      async ([fetchUrl, fetchInit]: [string, { method?: string; headers?: any; body?: any }]) => {
+      async ([fetchUrl, fetchInit]: [string, { method?: string; headers?: Record<string, string>; body?: string }]) => {
         const res = await fetch(fetchUrl, {
           method: fetchInit.method || 'GET',
-          headers: fetchInit.headers as Record<string, string>,
-          body: fetchInit.body as string | undefined,
+          headers: fetchInit.headers,
+          body: fetchInit.body,
           credentials: 'include',
         });
 
@@ -59,7 +64,11 @@ export class BrowserManager {
         const text = await res.text();
         return { status: res.status, headers, body: text, ok: res.ok };
       },
-      [url, { method: init.method, headers: init.headers, body: init.body }] as const,
+      [url, {
+        method: init.method,
+        headers: init.headers as Record<string, string>,
+        body: init.body as string,
+      }] as [string, { method?: string; headers?: Record<string, string>; body?: string }],
     );
 
     return new Response(result.body, {
@@ -70,10 +79,9 @@ export class BrowserManager {
 
   async openForLogin(loginUrl: string): Promise<void> {
     const ctx = await this.ensureBrowser();
-    const page = await ctx.newPage();
+    const page: Page = await ctx.newPage();
     await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
 
-    // Wait for user to complete login (up to loginTimeout)
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         page.close().catch(() => {});

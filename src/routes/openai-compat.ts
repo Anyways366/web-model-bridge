@@ -50,7 +50,7 @@ export function openaiRoutes(registry: ProviderRegistry): Hono {
 
     const runId = `wmb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const messages: Message[] = body.messages;
-    const isStream = body.stream !== false;
+    const isStream = body.stream === true;
 
     if (isStream) {
       c.header('Content-Type', 'text/event-stream');

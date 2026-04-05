@@ -93,12 +93,13 @@ interface ModelsResponse {
 export function formatModelsResponse(
   models: (ModelInfo & { id: string })[],
 ): ModelsResponse {
+  const now = Math.floor(Date.now() / 1000);
   return {
     object: 'list',
     data: models.map(m => ({
       id: m.id,
       object: 'model' as const,
-      created: Math.floor(Date.now() / 1000),
+      created: now,
       owned_by: 'web-model-bridge',
     })),
   };

@@ -3,6 +3,7 @@ import { openaiRoutes } from './routes/openai-compat.js';
 import { managementRoutes, type ManagementDeps } from './routes/management.js';
 import { ProviderRegistry } from './core/registry.js';
 import { AuthStore } from './auth/store.js';
+import type { BrowserStatus } from './browser/manager.js';
 import { InvalidTokenError, errorToHttpResponse } from './core/errors.js';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -15,14 +16,15 @@ export interface AppOptions {
   authStore: AuthStore;
   authToken: string | null;
   onLogin?: (providerId: string) => Promise<{ status: string }>;
+  getBrowserStatus?: () => BrowserStatus;
 }
 
 export function createApp(opts: AppOptions): Hono {
   const app = new Hono();
 
-  // Auth middleware for /v1/* routes
+  // Auth middleware for API routes (both /v1/* and /webmodel/*)
   if (opts.authToken) {
-    app.use('/v1/*', async (c, next) => {
+    const checkToken = async (c: any, next: any) => {
       const authHeader = c.req.header('Authorization');
       const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
       if (token !== opts.authToken) {
@@ -30,7 +32,9 @@ export function createApp(opts: AppOptions): Hono {
         return c.json(res.body, res.status as any);
       }
       await next();
-    });
+    };
+    app.use('/v1/*', checkToken);
+    app.use('/webmodel/*', checkToken);
   }
 
   // Dashboard
@@ -64,6 +68,8 @@ export function createApp(opts: AppOptions): Hono {
     registry: opts.registry,
     authStore: opts.authStore,
     onLogin: opts.onLogin,
+    getBrowserStatus: opts.getBrowserStatus,
+    startTime: Date.now(),
   };
   app.route('/', managementRoutes(mgmtDeps));
 

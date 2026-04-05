@@ -1,6 +1,7 @@
 import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
 import { normalizeDeepSeekSSE } from './stream.js';
+import { DEEPSEEK_WEB_BASE_URL } from './client.js';
 import { AuthStore } from '../../auth/store.js';
 
 export class DeepSeekProvider extends BaseProvider {
@@ -44,7 +45,7 @@ export class DeepSeekProvider extends BaseProvider {
       return;
     }
 
-    const response = await this.browserFetch('https://chat.deepseek.com/api/v0/chat/completions', {
+    const response = await this.browserFetch(`${DEEPSEEK_WEB_BASE_URL}/api/v0/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
