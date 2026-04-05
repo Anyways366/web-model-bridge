@@ -1,5 +1,20 @@
-var apiUrl = window.location.origin + '/v1';
-document.getElementById('api-url').textContent = apiUrl;
+var origin = window.location.origin;
+document.getElementById('openai-url').textContent = origin + '/v1';
+document.getElementById('anthropic-url').textContent = origin;
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 2000);
+}
+
+function copyText(elId) {
+  var text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('Copied to clipboard!');
+  });
+}
 
 function esc(s) {
   var d = document.createElement('div');
@@ -7,72 +22,74 @@ function esc(s) {
   return d.innerHTML;
 }
 
-async function copyUrl() {
-  await navigator.clipboard.writeText(apiUrl);
-  var btn = document.getElementById('copy-btn');
-  btn.textContent = 'Copied!';
-  setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
-}
-
 async function loadProviders() {
   try {
     var res = await fetch('/webmodel/providers');
     var data = await res.json();
     var list = document.getElementById('provider-list');
+    var countEl = document.getElementById('provider-count');
+
     if (!data.providers || data.providers.length === 0) {
-      list.innerHTML = '<p class="empty">No providers configured.</p>';
+      list.innerHTML = '<div class="empty">No providers configured.</div>';
+      countEl.textContent = '0 / 0';
       return;
     }
+
+    var authCount = data.providers.filter(function(p) { return p.authenticated; }).length;
+    countEl.textContent = authCount + ' / ' + data.providers.length + ' active';
+
     list.innerHTML = '';
     data.providers.forEach(function(p) {
-      var card = document.createElement('div');
-      card.className = 'provider-card ' + (p.authenticated ? 'active' : 'inactive');
+      var row = document.createElement('div');
+      row.className = 'provider-row';
 
-      var info = document.createElement('div');
-      info.className = 'provider-info';
+      var left = document.createElement('div');
+      left.className = 'provider-left';
 
-      var dot = document.createElement('span');
-      dot.className = 'status-dot ' + (p.authenticated ? 'green' : 'red');
-      info.appendChild(dot);
+      var dot = document.createElement('div');
+      dot.className = 'status-indicator ' + (p.authenticated ? 'active' : 'inactive');
+      left.appendChild(dot);
 
-      var name = document.createElement('strong');
-      name.textContent = p.name;
-      info.appendChild(name);
+      var nameEl = document.createElement('span');
+      nameEl.className = 'provider-name';
+      nameEl.textContent = p.name;
+      left.appendChild(nameEl);
 
-      var pid = document.createElement('span');
-      pid.className = 'provider-id';
-      pid.textContent = p.id;
-      info.appendChild(pid);
+      var idEl = document.createElement('span');
+      idEl.className = 'provider-id';
+      idEl.textContent = p.id;
+      left.appendChild(idEl);
 
-      card.appendChild(info);
+      row.appendChild(left);
 
-      var action = document.createElement('div');
-      action.className = 'provider-action';
+      var right = document.createElement('div');
+      right.className = 'provider-right';
 
       if (p.authenticated) {
-        var mc = document.createElement('span');
-        mc.className = 'model-count';
-        mc.textContent = p.modelCount + ' models';
-        action.appendChild(mc);
+        var badge = document.createElement('span');
+        badge.className = 'model-badge';
+        badge.textContent = p.modelCount + ' models';
+        right.appendChild(badge);
       } else {
         var btn = document.createElement('button');
-        btn.className = 'login-btn';
+        btn.className = 'btn-login';
         btn.textContent = 'Login';
         btn.addEventListener('click', function() { loginProvider(p.id); });
-        action.appendChild(btn);
+        right.appendChild(btn);
       }
 
-      card.appendChild(action);
-      list.appendChild(card);
+      row.appendChild(right);
+      list.appendChild(row);
     });
   } catch (err) {
     document.getElementById('provider-list').innerHTML =
-      '<p class="error">Failed to load: ' + esc(err.message) + '</p>';
+      '<div class="error">Failed to load: ' + esc(err.message) + '</div>';
   }
 }
 
 async function loginProvider(providerId) {
   try {
+    showToast('Opening login window for ' + providerId + '...');
     var res = await fetch('/webmodel/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -80,24 +97,26 @@ async function loginProvider(providerId) {
     });
     var data = await res.json();
     if (data.status === 'login_started') {
-      alert('Login window opened for ' + providerId + '. Complete login in the browser window.');
       pollLogin(providerId);
     }
   } catch (err) {
-    alert('Login failed: ' + err.message);
+    showToast('Login failed: ' + err.message);
   }
 }
 
 function pollLogin(providerId) {
   var interval = setInterval(async function() {
-    var res = await fetch('/webmodel/providers');
-    var data = await res.json();
-    var provider = data.providers.find(function(p) { return p.id === providerId; });
-    if (provider && provider.authenticated) {
-      clearInterval(interval);
-      loadProviders();
-      loadHealth();
-    }
+    try {
+      var res = await fetch('/webmodel/providers');
+      var data = await res.json();
+      var provider = data.providers.find(function(p) { return p.id === providerId; });
+      if (provider && provider.authenticated) {
+        clearInterval(interval);
+        showToast(providerId + ' authenticated!');
+        loadProviders();
+        loadHealth();
+      }
+    } catch (e) { /* retry */ }
   }, 2000);
   setTimeout(function() { clearInterval(interval); }, 120000);
 }
@@ -107,45 +126,45 @@ async function loadHealth() {
     var res = await fetch('/webmodel/health');
     var data = await res.json();
     var el = document.getElementById('health-info');
-    var seconds = data.uptime;
+
+    var seconds = data.uptime || 0;
     var uptime = seconds < 60 ? seconds + 's' :
       seconds < 3600 ? Math.floor(seconds / 60) + 'm' :
       Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
 
+    var providerCount = Object.keys(data.providers || {}).length;
+    var browserStatus = data.browser ? data.browser.status : 'unknown';
+
     el.innerHTML = '';
-    var grid = document.createElement('div');
-    grid.className = 'health-grid';
 
-    var statusItem = document.createElement('div');
-    statusItem.className = 'health-item';
-    var sl = document.createElement('span');
-    sl.className = 'health-label';
-    sl.textContent = 'Status';
-    var sv = document.createElement('span');
-    sv.className = 'health-value ' + esc(data.status);
-    sv.textContent = data.status;
-    statusItem.appendChild(sl);
-    statusItem.appendChild(sv);
+    var items = [
+      { label: 'Status', value: data.status || 'unknown', cls: data.status === 'healthy' ? 'green' : '' },
+      { label: 'Uptime', value: uptime, cls: '' },
+      { label: 'Browser', value: browserStatus, cls: browserStatus === 'running' ? 'green' : '' },
+    ];
 
-    var uptimeItem = document.createElement('div');
-    uptimeItem.className = 'health-item';
-    var ul = document.createElement('span');
-    ul.className = 'health-label';
-    ul.textContent = 'Uptime';
-    var uv = document.createElement('span');
-    uv.className = 'health-value';
-    uv.textContent = uptime;
-    uptimeItem.appendChild(ul);
-    uptimeItem.appendChild(uv);
+    items.forEach(function(item) {
+      var div = document.createElement('div');
+      div.className = 'stat-item';
 
-    grid.appendChild(statusItem);
-    grid.appendChild(uptimeItem);
-    el.appendChild(grid);
+      var label = document.createElement('span');
+      label.className = 'stat-label';
+      label.textContent = item.label;
+      div.appendChild(label);
+
+      var val = document.createElement('span');
+      val.className = 'stat-value' + (item.cls ? ' ' + item.cls : '');
+      val.textContent = item.value;
+      div.appendChild(val);
+
+      el.appendChild(div);
+    });
   } catch (e) {
-    document.getElementById('health-info').innerHTML = '<p class="error">Unable to reach server</p>';
+    document.getElementById('health-info').innerHTML = '<div class="error">Unable to reach server</div>';
   }
 }
 
+// Initial load + auto-refresh
 loadProviders();
 loadHealth();
 setInterval(function() { loadProviders(); loadHealth(); }, 10000);

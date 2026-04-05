@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
 import type { BrowserContext, Page } from 'playwright-core';
+import { findChromePath } from '../doctor.js';
 
 export type BrowserStatus = 'running' | 'idle' | 'stopped';
 
@@ -122,18 +122,6 @@ export class BrowserManager {
   }
 
   private findChrome(): string | undefined {
-    const paths = [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-    ];
-
-    for (const p of paths) {
-      if (existsSync(p)) return p;
-    }
-    return undefined;
+    return findChromePath();
   }
 }

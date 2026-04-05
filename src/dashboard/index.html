@@ -3,31 +3,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>web-model-bridge</title>
+  <title>web-model-bridge — Dashboard</title>
   <link rel="stylesheet" href="/dashboard/style.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>web-model-bridge</h1>
-      <p class="subtitle">Dashboard</p>
-    </header>
-    <section class="api-url">
-      <label>API Base URL</label>
-      <div class="url-box">
-        <code id="api-url"></code>
-        <button onclick="copyUrl()" id="copy-btn">Copy</button>
+  <nav class="topbar">
+    <div class="topbar-brand">
+      <span class="logo">🌉</span>
+      <span class="brand-name">web-model-bridge</span>
+    </div>
+    <div class="topbar-status" id="server-status">
+      <span class="pulse green"></span>
+      <span>Running</span>
+    </div>
+  </nav>
+
+  <main class="container">
+    <!-- API URL Card -->
+    <section class="card api-card">
+      <div class="card-header">
+        <h2>API Endpoint</h2>
+        <span class="badge">Ready</span>
+      </div>
+      <div class="card-body">
+        <div class="endpoint-group">
+          <label>OpenAI Format <span class="hint">(OpenClaw, Cursor, Open WebUI)</span></label>
+          <div class="url-box">
+            <code id="openai-url"></code>
+            <button onclick="copyText('openai-url')" class="btn-copy">Copy</button>
+          </div>
+        </div>
+        <div class="endpoint-group">
+          <label>Anthropic Format <span class="hint">(Claude Code)</span></label>
+          <div class="url-box">
+            <code id="anthropic-url"></code>
+            <button onclick="copyText('anthropic-url')" class="btn-copy">Copy</button>
+          </div>
+        </div>
       </div>
     </section>
-    <section class="providers">
-      <h2>Providers</h2>
-      <div id="provider-list">Loading...</div>
+
+    <!-- Providers Card -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Providers</h2>
+        <span class="count" id="provider-count">0 / 0</span>
+      </div>
+      <div class="card-body" id="provider-list">
+        <div class="loading">Loading providers...</div>
+      </div>
     </section>
-    <section class="stats">
-      <h2>Status</h2>
-      <div id="health-info">Loading...</div>
+
+    <!-- Health Card -->
+    <section class="card">
+      <div class="card-header">
+        <h2>System</h2>
+      </div>
+      <div class="card-body">
+        <div class="stats-grid" id="health-info">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
     </section>
-  </div>
+  </main>
+
+  <footer class="footer">
+    <a href="https://github.com/linuxhsj/openclaw-zero-token/issues/176" target="_blank">GitHub Issue #176</a>
+    <span class="sep">·</span>
+    <span>web-model-bridge v0.1.0</span>
+  </footer>
+
+  <div class="toast" id="toast"></div>
+
   <script src="/dashboard/app.js"></script>
 </body>
 </html>

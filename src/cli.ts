@@ -37,6 +37,7 @@ const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, i
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { runDoctor, printDoctorResults } from './doctor.js';
 
 const DEFAULT_STATE_DIR = join(homedir(), '.webmodel');
 
@@ -54,6 +55,18 @@ program
   .action(async (opts) => {
     const stateDir = opts.stateDir;
     mkdirSync(stateDir, { recursive: true });
+
+    // Auto environment check
+    const doctorResults = runDoctor();
+    const hasFatal = doctorResults.some(r => r.status === 'fail');
+    if (hasFatal) {
+      printDoctorResults(doctorResults);
+      console.log(chalk.red('  Cannot start. Please fix the issues above.'));
+      process.exit(1);
+    }
+    if (opts.verbose) {
+      printDoctorResults(doctorResults);
+    }
 
     const config = loadConfig({
       stateDir,
