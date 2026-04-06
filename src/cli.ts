@@ -57,7 +57,7 @@ program
     mkdirSync(stateDir, { recursive: true });
 
     // Auto environment check
-    const doctorResults = runDoctor();
+    const doctorResults = await runDoctor();
     const hasFatal = doctorResults.some(r => r.status === 'fail');
     if (hasFatal) {
       printDoctorResults(doctorResults);

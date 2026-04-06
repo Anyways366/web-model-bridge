@@ -1,4 +1,4 @@
-<div align="center">
+
 
 # 🌉 web-model-bridge
 
@@ -6,14 +6,14 @@
 
 Use Claude, ChatGPT, DeepSeek, and 8 more AI models — completely free, zero API tokens.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-≥20-green.svg)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/Tests-132_passing-brightgreen.svg)](#testing)
+[License: MIT](LICENSE)
+[Node.js](https://nodejs.org/)
+[TypeScript](https://www.typescriptlang.org/)
+[Tests](#testing)
 
 [Quick Start](#quick-start) · [Supported Models](#supported-models) · [Configuration](#configuration) · [API Reference](#api-reference) · [Contributing](#contributing)
 
-</div>
+
 
 ---
 
@@ -30,15 +30,17 @@ Your AI Tool  →  web-model-bridge  →  Browser  →  Web AI Model
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| 🔌 **11 Providers** | Claude, ChatGPT, DeepSeek, Kimi, Qwen, GLM, Grok, Gemini, Perplexity, Doubao, Xiaomimo |
-| 🔄 **Dual API Format** | OpenAI (`/v1/chat/completions`) + Anthropic (`/v1/messages`) |
-| 🖥️ **Web Dashboard** | Visual management — login, status, one-click API URL copy |
-| 🚀 **One Command** | `npx web-model-bridge` — auto environment check, auto open Dashboard |
-| 🔒 **Secure** | Localhost-only by default, optional Bearer token, browser-isolated cookies |
-| 💻 **Cross-Platform** | macOS, Linux, Windows |
-| 🎯 **Zero Config** | Works out of the box, optional YAML config for customization |
+
+| Feature                | Description                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| 🔌 **11 Providers**    | Claude, ChatGPT, DeepSeek, Kimi, Qwen, GLM, Grok, Gemini, Perplexity, Doubao, Xiaomimo |
+| 🔄 **Dual API Format** | OpenAI (`/v1/chat/completions`) + Anthropic (`/v1/messages`)                           |
+| 🖥️ **Web Dashboard**  | Visual management — login, status, one-click API URL copy                              |
+| 🚀 **One Command**     | `npx web-model-bridge` — auto environment check, auto open Dashboard                   |
+| 🔒 **Secure**          | Localhost-only by default, optional Bearer token, browser-isolated cookies             |
+| 💻 **Cross-Platform**  | macOS, Linux, Windows                                                                  |
+| 🎯 **Zero Config**     | Works out of the box, optional YAML config for customization                           |
+
 
 ## Quick Start
 
@@ -49,17 +51,19 @@ npx web-model-bridge
 ```
 
 This will:
+
 - ✓ Check your environment (Node.js, Chrome)
 - ✓ Start HTTP server on port 3456
 - ✓ Open Dashboard in your browser
 
 ### 2. Login to AI providers
 
-In the Dashboard (http://localhost:3456), click **Login** next to any provider. A browser window opens — log in as you normally would. Done.
+In the Dashboard ([http://localhost:3456](http://localhost:3456)), click **Login** next to any provider. A browser window opens — log in as you normally would. Done.
 
 ### 3. Connect your AI tool
 
 **OpenClaw** — Add to `~/.openclaw/openclaw.json`:
+
 ```json
 {
   "models": {
@@ -79,6 +83,7 @@ In the Dashboard (http://localhost:3456), click **Login** next to any provider. 
 ```
 
 **Claude Code:**
+
 ```bash
 export ANTHROPIC_BASE_URL="http://localhost:3456"
 export ANTHROPIC_API_KEY="not-needed"
@@ -91,24 +96,26 @@ claude
 
 ## Supported Models
 
-| Model ID | Name | Context | Platform |
-|----------|------|---------|----------|
-| `claude-web/claude-sonnet-4-6` | Claude Sonnet 4.6 | 1M | claude.ai |
-| `claude-web/claude-haiku-4-5` | Claude Haiku 4.5 | 200K | claude.ai |
-| `chatgpt-web/gpt-5.3` | GPT-5.3 | 128K | chatgpt.com |
-| `chatgpt-web/gpt-5.4-mini` | GPT-5.4 Mini | 128K | chatgpt.com |
-| `deepseek-web/deepseek-v4` | DeepSeek V4 | 128K | chat.deepseek.com |
-| `deepseek-web/deepseek-v4-reasoner` | DeepSeek V4 Reasoner | 128K | chat.deepseek.com |
-| `kimi-web/kimi-k2.5` | Kimi K2.5 | 256K | kimi.moonshot.cn |
-| `qwen-web/qwen-3.5-plus` | Qwen 3.5 Plus | 262K | chat.qwen.ai |
-| `qwen-web/qwq` | QwQ | 32K | chat.qwen.ai |
-| `glm-web/glm-5` | GLM-5 | 128K | chatglm.cn |
-| `grok-web/grok-3` | Grok 3 | 128K | grok.com |
-| `gemini-web/gemini-3-flash` | Gemini 3 Flash | 1M | gemini.google.com |
-| `gemini-web/gemini-2.5-pro` | Gemini 2.5 Pro | 1M | gemini.google.com |
-| `perplexity-web/perplexity-default` | Perplexity | 128K | perplexity.ai |
-| `doubao-web/doubao-seed-2.0-pro` | Doubao Seed 2.0 Pro | 256K | doubao.com |
-| `xiaomimo-web/mimo-v2-pro` | MiMo V2 Pro | 1M | xiaomimimo.com |
+
+| Model ID                            | Name                 | Context | Platform          |
+| ----------------------------------- | -------------------- | ------- | ----------------- |
+| `claude-web/claude-sonnet-4-6`      | Claude Sonnet 4.6    | 1M      | claude.ai         |
+| `claude-web/claude-haiku-4-5`       | Claude Haiku 4.5     | 200K    | claude.ai         |
+| `chatgpt-web/gpt-5.3`               | GPT-5.3              | 128K    | chatgpt.com       |
+| `chatgpt-web/gpt-5.4-mini`          | GPT-5.4 Mini         | 128K    | chatgpt.com       |
+| `deepseek-web/deepseek-v4`          | DeepSeek V4          | 128K    | chat.deepseek.com |
+| `deepseek-web/deepseek-v4-reasoner` | DeepSeek V4 Reasoner | 128K    | chat.deepseek.com |
+| `kimi-web/kimi-k2.5`                | Kimi K2.5            | 256K    | kimi.moonshot.cn  |
+| `qwen-web/qwen-3.5-plus`            | Qwen 3.5 Plus        | 262K    | chat.qwen.ai      |
+| `qwen-web/qwq`                      | QwQ                  | 32K     | chat.qwen.ai      |
+| `glm-web/glm-5`                     | GLM-5                | 128K    | chatglm.cn        |
+| `grok-web/grok-3`                   | Grok 3               | 128K    | grok.com          |
+| `gemini-web/gemini-3-flash`         | Gemini 3 Flash       | 1M      | gemini.google.com |
+| `gemini-web/gemini-2.5-pro`         | Gemini 2.5 Pro       | 1M      | gemini.google.com |
+| `perplexity-web/perplexity-default` | Perplexity           | 128K    | perplexity.ai     |
+| `doubao-web/doubao-seed-2.0-pro`    | Doubao Seed 2.0 Pro  | 256K    | doubao.com        |
+| `xiaomimo-web/mimo-v2-pro`          | MiMo V2 Pro          | 1M      | xiaomimimo.com    |
+
 
 ## Configuration
 
@@ -126,6 +133,7 @@ web-model-bridge -v                      # Verbose logging (shows environment ch
 ### Config File
 
 `~/.webmodel/config.yml`:
+
 ```yaml
 server:
   port: 3456
@@ -175,16 +183,18 @@ curl http://localhost:3456/v1/messages \
 
 ### Management Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Web Dashboard |
-| `/v1/chat/completions` | POST | OpenAI-compatible chat |
-| `/v1/messages` | POST | Anthropic-compatible chat |
-| `/v1/models` | GET | List available models |
-| `/webmodel/providers` | GET | Provider auth status |
-| `/webmodel/health` | GET | Server health check |
-| `/webmodel/auth/login` | POST | Trigger provider login |
-| `/webmodel/auth/logout` | POST | Clear provider auth |
+
+| Endpoint                | Method | Description               |
+| ----------------------- | ------ | ------------------------- |
+| `/`                     | GET    | Web Dashboard             |
+| `/v1/chat/completions`  | POST   | OpenAI-compatible chat    |
+| `/v1/messages`          | POST   | Anthropic-compatible chat |
+| `/v1/models`            | GET    | List available models     |
+| `/webmodel/providers`   | GET    | Provider auth status      |
+| `/webmodel/health`      | GET    | Server health check       |
+| `/webmodel/auth/login`  | POST   | Trigger provider login    |
+| `/webmodel/auth/logout` | POST   | Clear provider auth       |
+
 
 ## Architecture
 
@@ -220,15 +230,17 @@ curl http://localhost:3456/v1/messages \
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| "Chrome not found" | Install Google Chrome. Run with `-v` to see detected paths |
-| "Browser not connected" | Chrome may have crashed. Restart web-model-bridge |
-| Cookie expired | Click **Re-login** in Dashboard — no restart needed |
-| Port 3456 in use | Use `-p 8080` or any free port |
-| Claude Code 404 | `ANTHROPIC_BASE_URL` must NOT end with `/v1` |
-| Cursor connection fails | Some Cursor versions require ngrok for localhost |
-| Windows: Chrome not detected | Ensure Chrome is in default install path (Program Files) |
+
+| Problem                      | Solution                                                   |
+| ---------------------------- | ---------------------------------------------------------- |
+| "Chrome not found"           | Install Google Chrome. Run with `-v` to see detected paths |
+| "Browser not connected"      | Chrome may have crashed. Restart web-model-bridge          |
+| Cookie expired               | Click **Re-login** in Dashboard — no restart needed        |
+| Port 3456 in use             | Use `-p 8080` or any free port                             |
+| Claude Code 404              | `ANTHROPIC_BASE_URL` must NOT end with `/v1`               |
+| Cursor connection fails      | Some Cursor versions require ngrok for localhost           |
+| Windows: Chrome not detected | Ensure Chrome is in default install path (Program Files)   |
+
 
 ## Testing
 

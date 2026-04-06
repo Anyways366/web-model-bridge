@@ -10,7 +10,7 @@ interface CheckResult {
   fix?: string;
 }
 
-export function runDoctor(): CheckResult[] {
+export async function runDoctor(): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
 
   // 1. Node.js version
@@ -59,9 +59,9 @@ export function runDoctor(): CheckResult[] {
     });
   }
 
-  // 4. Playwright-core
+  // 4. Playwright-core — check via dynamic import
   try {
-    require.resolve('playwright-core');
+    await import('playwright-core');
     results.push({ name: 'playwright-core', status: 'ok', message: 'Installed ✓' });
   } catch {
     results.push({
