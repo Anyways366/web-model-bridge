@@ -19,8 +19,13 @@ import { PerplexityProvider } from './providers/perplexity-web/index.js';
 import { DoubaoProvider } from './providers/doubao-web/index.js';
 import { XiaomimoProvider } from './providers/xiaomimo-web/index.js';
 import type { BaseProvider } from './core/provider.js';
+import { homedir, platform } from 'node:os';
+import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { createServer } from 'node:net';
+import { runDoctor, printDoctorResults, findChromePath } from './doctor.js';
 
-// Provider registry map: id → constructor
 const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, init: RequestInit) => Promise<Response>) => BaseProvider> = {
   'claude-web': ClaudeProvider,
   'chatgpt-web': ChatGPTProvider,
@@ -34,12 +39,96 @@ const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, i
   'doubao-web': DoubaoProvider,
   'xiaomimo-web': XiaomimoProvider,
 };
-import { homedir, platform } from 'node:os';
-import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { runDoctor, printDoctorResults } from './doctor.js';
 
 const DEFAULT_STATE_DIR = join(homedir(), '.webmodel');
+
+// ─── Helpers ───
+
+/** Check if a port is available */
+function isPortAvailable(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => { srv.close(); resolve(true); });
+    srv.listen(port, host);
+  });
+}
+
+/** Find an available port starting from preferred */
+async function findAvailablePort(preferred: number, host: string): Promise<number> {
+  for (let port = preferred; port < preferred + 100; port++) {
+    if (await isPortAvailable(port, host)) return port;
+  }
+  throw new Error(`No available port found in range ${preferred}-${preferred + 99}`);
+}
+
+/** Check if Chrome is running (any instance) */
+function isChromeRunning(): boolean {
+  try {
+    const os = platform();
+    if (os === 'darwin') {
+      execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' });
+      return true;
+    } else if (os === 'win32') {
+      const out = execSync('tasklist /FI "IMAGENAME eq chrome.exe" /NH', { encoding: 'utf-8' });
+      return out.includes('chrome.exe');
+    } else {
+      execSync('pgrep -x "chrome|chromium|google-chrome"', { stdio: 'ignore' });
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** Check if CDP is available */
+async function checkCDP(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/json/version`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Try to launch Chrome with debugging port */
+async function launchChromeWithCDP(cdpPort: number): Promise<boolean> {
+  const chromePath = findChromePath();
+  if (!chromePath) return false;
+
+  try {
+    const os = platform();
+    if (os === 'darwin') {
+      execSync(`"${chromePath}" --remote-debugging-port=${cdpPort} &>/dev/null &`, { shell: '/bin/zsh' });
+    } else if (os === 'win32') {
+      execSync(`start "" "${chromePath}" --remote-debugging-port=${cdpPort}`, { shell: 'cmd.exe' });
+    } else {
+      execSync(`"${chromePath}" --remote-debugging-port=${cdpPort} &>/dev/null &`, { shell: '/bin/bash' });
+    }
+
+    // Wait for CDP to become available (up to 8 seconds)
+    for (let i = 0; i < 16; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      if (await checkCDP(`http://127.0.0.1:${cdpPort}`)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Get platform-specific Chrome launch command for display */
+function getChromeCommand(port: number): string {
+  const os = platform();
+  if (os === 'darwin') {
+    return `/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=${port}`;
+  } else if (os === 'win32') {
+    return `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=${port}`;
+  }
+  return `google-chrome --remote-debugging-port=${port}`;
+}
+
+// ─── Main ───
 
 program
   .name('web-model-bridge')
@@ -55,10 +144,12 @@ program
   .option('--browser-mode <mode>', 'browser mode: attach (default) or launch', 'attach')
   .option('--cdp-url <url>', 'Chrome CDP URL for attach mode', 'http://127.0.0.1:9222')
   .action(async (opts) => {
+    console.log('');
+
     const stateDir = opts.stateDir;
     mkdirSync(stateDir, { recursive: true });
 
-    // Auto environment check
+    // ── Step 1: Environment check ──
     const doctorResults = await runDoctor();
     const hasFatal = doctorResults.some(r => r.status === 'fail');
     if (hasFatal) {
@@ -79,47 +170,78 @@ program
       verbose: opts.verbose,
     });
 
-    const registry = new ProviderRegistry();
-    const authStore = new AuthStore(stateDir);
+    // ── Step 2: Find available port ──
+    let serverPort = config.server.port;
+    const serverHost = config.server.host;
+    if (!(await isPortAvailable(serverPort, serverHost))) {
+      const oldPort = serverPort;
+      serverPort = await findAvailablePort(serverPort + 1, serverHost);
+      console.log(chalk.yellow(`  ⚠ Port ${oldPort} in use, using ${serverPort} instead`));
+    }
 
+    // ── Step 3: Browser setup ──
     const browserMode = (opts.browserMode === 'launch' ? 'launch' : 'attach') as 'attach' | 'launch';
+    const cdpPort = parseInt(new URL(opts.cdpUrl).port, 10) || 9222;
+    const cdpUrl = opts.cdpUrl;
+
+    if (browserMode === 'attach') {
+      const cdpAvailable = await checkCDP(cdpUrl);
+
+      if (cdpAvailable) {
+        console.log(chalk.green('  ✓') + ` Chrome CDP connected at ${cdpUrl}`);
+      } else {
+        // CDP not available — figure out why and try to fix
+        const chromeRunning = isChromeRunning();
+
+        if (chromeRunning) {
+          // Chrome is running but WITHOUT debugging port
+          console.log(chalk.yellow('  ⚠ Chrome is running but without remote debugging port.'));
+          console.log(chalk.yellow('    To reuse your existing login sessions:'));
+          console.log('');
+          console.log(chalk.white('    1. Quit Chrome completely (Cmd+Q / Alt+F4)'));
+          console.log(chalk.white('    2. Restart with:'));
+          console.log(chalk.cyan(`       ${getChromeCommand(cdpPort)}`));
+          console.log('');
+          console.log(chalk.gray('    Or use launch mode (separate browser, needs re-login):'));
+          console.log(chalk.gray('    web-model-bridge --browser-mode launch'));
+          console.log('');
+          console.log(chalk.yellow('    Server will start anyway. Login via Dashboard will work in launch mode.'));
+          console.log('');
+        } else {
+          // Chrome not running at all — try to launch it with CDP
+          console.log(chalk.gray('  … Chrome not running, launching with debug port...'));
+
+          const launched = await launchChromeWithCDP(cdpPort);
+          if (launched) {
+            console.log(chalk.green('  ✓') + ` Chrome launched with CDP at port ${cdpPort}`);
+          } else {
+            console.log(chalk.yellow('  ⚠ Could not auto-launch Chrome with debug port.'));
+            console.log(chalk.yellow('    Please start manually:'));
+            console.log(chalk.cyan(`    ${getChromeCommand(cdpPort)}`));
+            console.log('');
+          }
+        }
+      }
+    } else {
+      console.log(chalk.green('  ✓') + ' Browser mode: launch (independent Chrome)');
+    }
+
     const browserManager = new BrowserManager({
       profileDir: config.browser.profileDir,
       startupTimeout: config.browser.startupTimeout,
       idleShutdown: config.browser.idleShutdown,
       loginTimeout: config.browser.loginTimeout,
-      cdpUrl: opts.cdpUrl,
+      cdpUrl,
       mode: browserMode,
     });
 
-    // In attach mode, check if Chrome with CDP is reachable
-    if (browserMode === 'attach') {
-      const cdpAvailable = await browserManager.detectCDP();
-      if (cdpAvailable) {
-        console.log(chalk.green('  ✓') + ` Chrome CDP detected at ${opts.cdpUrl}`);
-      } else {
-        console.log('');
-        console.log(chalk.yellow('  ⚠ Chrome with remote debugging not detected.'));
-        console.log(chalk.yellow('    Start Chrome with debugging enabled:'));
-        console.log('');
-        if (platform() === 'darwin') {
-          console.log(chalk.gray('    /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222'));
-        } else if (platform() === 'win32') {
-          console.log(chalk.gray('    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222'));
-        } else {
-          console.log(chalk.gray('    google-chrome --remote-debugging-port=9222'));
-        }
-        console.log('');
-        console.log(chalk.yellow('    Or use launch mode: web-model-bridge --browser-mode launch'));
-        console.log('');
-      }
-    }
+    // ── Step 4: Register providers ──
+    const registry = new ProviderRegistry();
+    const authStore = new AuthStore(stateDir);
 
-    // Browser fetch wrapper for providers
     const browserFetch = (url: string, init: RequestInit) =>
       browserManager.fetchInBrowser(url, init);
 
-    // Register enabled providers
     const enabled = new Set(config.providers.enabled);
     for (const [id, Ctor] of Object.entries(PROVIDER_MAP)) {
       if (enabled.has(id)) {
@@ -127,6 +249,7 @@ program
       }
     }
 
+    // ── Step 5: Create and start server ──
     const app = createApp({
       registry,
       authStore,
@@ -136,8 +259,6 @@ program
         const provider = registry.getProvider(providerId);
         if (!provider) return { status: 'error', message: `Provider "${providerId}" not found.` };
 
-        // Non-blocking: startLogin returns immediately after opening the browser.
-        // The onComplete callback fires later when the user closes the window.
         await browserManager.startLogin(providerId, provider.info.loginUrl, (success) => {
           if (success) {
             authStore.setStatus(providerId, 'active');
@@ -149,7 +270,9 @@ program
 
         return {
           status: 'login_started',
-          message: 'A Chrome window should have opened. Please log in there.',
+          message: browserMode === 'attach'
+            ? 'A new tab opened in your Chrome. Log in and close the tab when done.'
+            : 'A Chrome window opened. Log in and close it when done.',
         };
       },
       getLoginState: () => browserManager.getLoginState(),
@@ -157,13 +280,12 @@ program
 
     serve({
       fetch: app.fetch,
-      port: config.server.port,
-      hostname: config.server.host,
+      port: serverPort,
+      hostname: serverHost,
     });
 
-    const url = `http://${config.server.host === '0.0.0.0' ? 'localhost' : config.server.host}:${config.server.port}`;
+    const url = `http://${serverHost === '0.0.0.0' ? 'localhost' : serverHost}:${serverPort}`;
 
-    console.log('');
     console.log(chalk.green('  ✓') + ` Server running at ${chalk.cyan(url)}`);
     console.log(chalk.green('  ✓') + ` API Base: ${chalk.cyan(url + '/v1')}`);
 
@@ -178,10 +300,13 @@ program
       console.log(chalk.green('  ✓') + ` Dashboard: ${chalk.cyan(url)}`);
     }
 
-    if (authCount === 0) {
-      console.log('');
-      console.log(chalk.yellow('  No providers authenticated yet.'));
-      console.log(chalk.yellow(`  Open the Dashboard to login → ${url}`));
+    if (authCount === 0 && browserMode === 'attach') {
+      const cdpNow = await checkCDP(cdpUrl);
+      if (cdpNow) {
+        console.log('');
+        console.log(chalk.green('  ✓ Chrome is connected. Your existing login sessions are available.'));
+        console.log(chalk.gray('    Requests will use cookies from your Chrome browser.'));
+      }
     }
 
     console.log('');
