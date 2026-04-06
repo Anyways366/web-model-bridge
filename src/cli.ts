@@ -92,22 +92,26 @@ async function checkCDP(url: string): Promise<boolean> {
 }
 
 /** Try to launch Chrome with debugging port */
-async function launchChromeWithCDP(cdpPort: number): Promise<boolean> {
+async function launchChromeWithCDP(cdpPort: number, profileDir: string): Promise<boolean> {
   const chromePath = findChromePath();
   if (!chromePath) return false;
+
+  // Must use non-default profile dir — Chrome refuses CDP on default profile
+  mkdirSync(profileDir, { recursive: true });
+  const args = `--remote-debugging-port=${cdpPort} --user-data-dir="${profileDir}" --no-first-run --no-default-browser-check`;
 
   try {
     const os = platform();
     if (os === 'darwin') {
-      execSync(`"${chromePath}" --remote-debugging-port=${cdpPort} &>/dev/null &`, { shell: '/bin/zsh' });
+      execSync(`"${chromePath}" ${args} &>/dev/null &`, { shell: '/bin/zsh' });
     } else if (os === 'win32') {
-      execSync(`start "" "${chromePath}" --remote-debugging-port=${cdpPort}`, { shell: 'cmd.exe' });
+      execSync(`start "" "${chromePath}" ${args}`, { shell: 'cmd.exe' });
     } else {
-      execSync(`"${chromePath}" --remote-debugging-port=${cdpPort} &>/dev/null &`, { shell: '/bin/bash' });
+      execSync(`"${chromePath}" ${args} &>/dev/null &`, { shell: '/bin/bash' });
     }
 
-    // Wait for CDP to become available (up to 8 seconds)
-    for (let i = 0; i < 16; i++) {
+    // Wait for CDP to become available (up to 10 seconds)
+    for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 500));
       if (await checkCDP(`http://127.0.0.1:${cdpPort}`)) return true;
     }
@@ -195,25 +199,30 @@ program
 
         if (chromeRunning) {
           // Chrome is running but WITHOUT debugging port
-          console.log(chalk.yellow('  ⚠ Chrome is running but without remote debugging port.'));
-          console.log(chalk.yellow('    To reuse your existing login sessions:'));
-          console.log('');
-          console.log(chalk.white('    1. Quit Chrome completely (Cmd+Q / Alt+F4)'));
-          console.log(chalk.white('    2. Restart with:'));
-          console.log(chalk.cyan(`       ${getChromeCommand(cdpPort)}`));
-          console.log('');
-          console.log(chalk.gray('    Or use launch mode (separate browser, needs re-login):'));
-          console.log(chalk.gray('    web-model-bridge --browser-mode launch'));
-          console.log('');
-          console.log(chalk.yellow('    Server will start anyway. Login via Dashboard will work in launch mode.'));
-          console.log('');
+          // Try launching a SECOND Chrome with independent profile + CDP
+          console.log(chalk.gray('  … Chrome running without CDP. Launching a dedicated instance...'));
+
+          const chromeProfileDir = join(stateDir, 'chrome-profile');
+          const launched = await launchChromeWithCDP(cdpPort, chromeProfileDir);
+          if (launched) {
+            console.log(chalk.green('  ✓') + ` Dedicated Chrome launched with CDP at port ${cdpPort}`);
+            console.log(chalk.gray(`    Profile: ${chromeProfileDir}`));
+            console.log(chalk.gray('    First time? Login via Dashboard after server starts.'));
+          } else {
+            console.log(chalk.yellow('  ⚠ Could not launch dedicated Chrome.'));
+            console.log(chalk.yellow('    Option 1: Quit Chrome (Cmd+Q), then run web-model-bridge again'));
+            console.log(chalk.yellow('    Option 2: Use launch mode: web-model-bridge --browser-mode launch'));
+            console.log('');
+          }
         } else {
-          // Chrome not running at all — try to launch it with CDP
+          // Chrome not running at all — auto-launch with CDP + dedicated profile
           console.log(chalk.gray('  … Chrome not running, launching with debug port...'));
 
-          const launched = await launchChromeWithCDP(cdpPort);
+          const chromeProfileDir = join(stateDir, 'chrome-profile');
+          const launched = await launchChromeWithCDP(cdpPort, chromeProfileDir);
           if (launched) {
             console.log(chalk.green('  ✓') + ` Chrome launched with CDP at port ${cdpPort}`);
+            console.log(chalk.gray(`    Profile: ${chromeProfileDir}`));
           } else {
             console.log(chalk.yellow('  ⚠ Could not auto-launch Chrome with debug port.'));
             console.log(chalk.yellow('    Please start manually:'));
