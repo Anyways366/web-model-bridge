@@ -251,11 +251,18 @@ program
 
     const browserFetch = (url: string, init: RequestInit) =>
       browserManager.fetchInBrowser(url, init);
+    const getPage = (origin: string) =>
+      browserManager.getPageForOrigin(origin);
 
     const enabled = new Set(config.providers.enabled);
     for (const [id, Ctor] of Object.entries(PROVIDER_MAP)) {
       if (enabled.has(id)) {
-        registry.register(new Ctor(authStore, browserFetch));
+        if (id === 'claude-web') {
+          // Claude needs getPage for multi-step API calls in browser context
+          registry.register(new ClaudeProvider(authStore, browserFetch, getPage));
+        } else {
+          registry.register(new Ctor(authStore, browserFetch));
+        }
       }
     }
 

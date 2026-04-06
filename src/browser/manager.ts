@@ -98,35 +98,49 @@ export class BrowserManager {
   private domainPages = new Map<string, Page>();
 
   /**
-   * Execute fetch in browser context. Navigates to the target domain first
-   * so that cookies are available and CORS is not an issue.
+   * Get a page navigated to the target origin (cached per domain).
    */
-  async fetchInBrowser(url: string, init: RequestInit): Promise<Response> {
+  async getPageForOrigin(origin: string): Promise<Page> {
     const ctx = await this.ensureBrowser();
-    const targetOrigin = new URL(url).origin; // e.g. "https://chat.deepseek.com"
 
-    // Get or create a page on the target domain
-    let page = this.domainPages.get(targetOrigin);
+    let page = this.domainPages.get(origin);
     if (page && page.isClosed()) {
-      this.domainPages.delete(targetOrigin);
+      this.domainPages.delete(origin);
       page = undefined;
     }
 
     if (!page) {
       page = await ctx.newPage();
       try {
-        // Navigate to target domain root to establish same-origin context
-        await page.goto(targetOrigin, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15000 });
       } catch {
-        // Some sites may block direct navigation; try with just the origin
         try {
-          await page.goto(targetOrigin + '/', { waitUntil: 'commit', timeout: 10000 });
+          await page.goto(origin + '/', { waitUntil: 'commit', timeout: 10000 });
         } catch {
-          // Even if navigation partially fails, the page is now on the right domain
+          // Page is now on the right domain even if load didn't fully complete
         }
       }
-      this.domainPages.set(targetOrigin, page);
+      this.domainPages.set(origin, page);
     }
+
+    return page;
+  }
+
+  /**
+   * Execute arbitrary code in browser context on a specific domain.
+   */
+  async evaluateOnDomain<T>(origin: string, fn: string, args?: unknown): Promise<T> {
+    const page = await this.getPageForOrigin(origin);
+    return page.evaluate(fn as any, args as any) as Promise<T>;
+  }
+
+  /**
+   * Execute fetch in browser context. Navigates to the target domain first
+   * so that cookies are available and CORS is not an issue.
+   */
+  async fetchInBrowser(url: string, init: RequestInit): Promise<Response> {
+    const targetOrigin = new URL(url).origin;
+    const page = await this.getPageForOrigin(targetOrigin);
 
     const result = await page.evaluate(
       async ([fetchUrl, fetchInit]: [string, { method?: string; headers?: Record<string, string>; body?: string }]) => {
