@@ -249,6 +249,25 @@ program
       }
     }
 
+    // ── Step 4b: Auto-detect authenticated providers via cookies ──
+    if (browserMode === 'attach' && await checkCDP(cdpUrl)) {
+      try {
+        const detected = await browserManager.autoDetectAuth();
+        let autoAuthCount = 0;
+        for (const [providerId, hasCookies] of Object.entries(detected)) {
+          if (hasCookies && enabled.has(providerId)) {
+            authStore.setStatus(providerId, 'active');
+            autoAuthCount++;
+          }
+        }
+        if (autoAuthCount > 0) {
+          console.log(chalk.green('  ✓') + ` Auto-detected ${autoAuthCount} authenticated providers from browser cookies`);
+        }
+      } catch {
+        // Auto-detect failed, not critical
+      }
+    }
+
     // ── Step 5: Create and start server ──
     const app = createApp({
       registry,

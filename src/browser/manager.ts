@@ -265,6 +265,43 @@ export class BrowserManager {
     }
   }
 
+  /**
+   * Auto-detect which providers have valid cookies in the connected browser.
+   * Returns a map of providerId → true for providers with cookies.
+   */
+  async autoDetectAuth(): Promise<Record<string, boolean>> {
+    const PROVIDER_DOMAINS: Record<string, string> = {
+      'claude-web': 'claude.ai',
+      'chatgpt-web': 'chatgpt.com',
+      'deepseek-web': 'deepseek.com',
+      'kimi-web': 'moonshot.cn',
+      'qwen-web': 'qwen.ai',
+      'glm-web': 'chatglm.cn',
+      'grok-web': 'grok.com',
+      'gemini-web': 'google.com',
+      'perplexity-web': 'perplexity.ai',
+      'doubao-web': 'doubao.com',
+      'xiaomimo-web': 'xiaomimimo.com',
+    };
+
+    const result: Record<string, boolean> = {};
+
+    try {
+      const ctx = await this.ensureBrowser();
+      const cookies = await ctx.cookies();
+
+      for (const [providerId, domain] of Object.entries(PROVIDER_DOMAINS)) {
+        const domainParts = domain.split('.').slice(-2).join('.');
+        const found = cookies.filter(c => c.domain.includes(domainParts));
+        result[providerId] = found.length > 0;
+      }
+    } catch {
+      // If browser not available, return all false
+    }
+
+    return result;
+  }
+
   getLoginState(): LoginState {
     return { ...this._loginState };
   }

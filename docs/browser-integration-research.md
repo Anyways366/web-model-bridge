@@ -10,10 +10,12 @@
 
 web-model-bridge 当前有两种浏览器模式：
 
-| 模式 | 需要重启 Chrome | 复用登录态 | 用户体验 |
-|------|---------------|-----------|---------|
-| `attach` (CDP) | 是（需带 `--remote-debugging-port`） | 是 | 需要关闭所有 Chrome 再重启 |
-| `launch` | 否 | 否（需重新登录） | 弹出独立 Chrome，登录各网站 |
+
+| 模式             | 需要重启 Chrome                     | 复用登录态    | 用户体验              |
+| -------------- | ------------------------------- | -------- | ----------------- |
+| `attach` (CDP) | 是（需带 `--remote-debugging-port`） | 是        | 需要关闭所有 Chrome 再重启 |
+| `launch`       | 否                               | 否（需重新登录） | 弹出独立 Chrome，登录各网站 |
+
 
 两种模式都有明显缺陷。CDP attach 要求重启 Chrome，用户日常开着 Chrome 根本不想关；launch 模式不复用登录态，用户要重新登录 11 个网站。
 
@@ -41,15 +43,18 @@ web-model-bridge 当前有两种浏览器模式：
 
 ### 1. bb-browser — ★ 推荐集成
 
-| 属性 | 值 |
-|------|---|
-| GitHub | https://github.com/epiral/bb-browser |
-| Stars | 4,117 |
-| 最后更新 | 2026-04-05（活跃） |
-| 语言 | TypeScript |
-| 类型 | 类型 A — 直接复用浏览器 Session |
+
+| 属性     | 值                                                                            |
+| ------ | ---------------------------------------------------------------------------- |
+| GitHub | [https://github.com/epiral/bb-browser](https://github.com/epiral/bb-browser) |
+| Stars  | 4,117                                                                        |
+| 最后更新   | 2026-04-05（活跃）                                                               |
+| 语言     | TypeScript                                                                   |
+| 类型     | 类型 A — 直接复用浏览器 Session                                                       |
+
 
 **核心原理**：
+
 ```
 bb-browser CLI/MCP → HTTP → 本地 Daemon (127.0.0.1:19824) → CDP WebSocket → 用户的 Chrome
 ```
@@ -57,6 +62,7 @@ bb-browser CLI/MCP → HTTP → 本地 Daemon (127.0.0.1:19824) → CDP WebSocke
 bb-browser 管理一个专用 Chrome 实例（独立 profile `~/.bb-browser/browser/`），用户首次在这个 Chrome 中登录各网站，之后 Session 永久持久化。daemon 通过 CDP 连接这个 Chrome，在 tab 内执行 `eval()`/`fetch()`，请求自动携带用户 Cookie。
 
 **关键特性**：
+
 - 不干扰用户日常 Chrome（独立 profile）
 - 登录一次永久持久化
 - 用户登录后 daemon 自动使用，无需手动操作
@@ -68,11 +74,13 @@ bb-browser 管理一个专用 Chrome 实例（独立 profile `~/.bb-browser/brow
 作为 `BrowserManager` 的第三种 mode（`mode: 'bb-browser'`）。`fetchInBrowser()` 直接将请求转发到 bb-browser daemon 的 HTTP 端点，由 daemon 在浏览器上下文中执行 fetch。
 
 **集成难度**：低
+
 - 不需要修改 bb-browser 源码
 - 只需新增一个 HTTP 客户端，调用 daemon API
 - 前提：用户需要先安装 bb-browser 并在其 Chrome 中登录
 
 **用户体验**：
+
 ```bash
 # 一次性准备（安装 bb-browser + 登录）
 npm install -g bb-browser
@@ -87,31 +95,36 @@ npx web-model-bridge --browser-mode bb-browser
 
 ### 2. agent-browser (Vercel Labs) — ★ 推荐借鉴
 
-| 属性 | 值 |
-|------|---|
-| GitHub | https://github.com/vercel-labs/agent-browser |
-| Stars | 27,407 |
-| 最后更新 | 2026-04-06（非常活跃） |
-| 语言 | Rust |
-| 类型 | 类型 B — 持久化 Session |
+
+| 属性     | 值                                                                                            |
+| ------ | -------------------------------------------------------------------------------------------- |
+| GitHub | [https://github.com/vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser) |
+| Stars  | 27,407                                                                                       |
+| 最后更新   | 2026-04-06（非常活跃）                                                                             |
+| 语言     | Rust                                                                                         |
+| 类型     | 类型 B — 持久化 Session                                                                           |
+
 
 **核心原理**：
 Rust 编写的 CLI + daemon 架构。daemon 首次命令时自动启动并持久化。支持连接已有 Chrome 或使用 Chrome for Testing。
 
 **Session 持久化方案（5 种机制，这是最有价值的借鉴）**：
 
-| 机制 | 原理 | 适用场景 |
-|------|------|---------|
-| **Chrome Profile 复用** | `--profile Default` 以只读快照复用现有 Chrome profile | 复用用户的登录态 |
-| **Persistent Profiles** | 自定义 profile 目录，完整存储 cookies/localStorage/IndexedDB | 独立环境 |
-| **Session Names** | `--session-name` 自动保存/恢复 cookies 和 localStorage | 多环境切换 |
-| **State Files** | `state save` 将 session 导出为 JSON 文件 | 备份/迁移/分享 |
-| **Auth Vault** | AES-256-GCM 加密的凭据存储，LLM 不可见 | 安全存储密码 |
+
+| 机制                      | 原理                                                 | 适用场景     |
+| ----------------------- | -------------------------------------------------- | -------- |
+| **Chrome Profile 复用**   | `--profile Default` 以只读快照复用现有 Chrome profile       | 复用用户的登录态 |
+| **Persistent Profiles** | 自定义 profile 目录，完整存储 cookies/localStorage/IndexedDB | 独立环境     |
+| **Session Names**       | `--session-name` 自动保存/恢复 cookies 和 localStorage    | 多环境切换    |
+| **State Files**         | `state save` 将 session 导出为 JSON 文件                 | 备份/迁移/分享 |
+| **Auth Vault**          | AES-256-GCM 加密的凭据存储，LLM 不可见                        | 安全存储密码   |
+
 
 存储位置：`~/.agent-browser/sessions/`，支持 30 天自动过期。
 
 **与 web-model-bridge 的关联**：
 不建议直接集成（Rust CLI，无 Node.js SDK），但其 Session 持久化设计值得借鉴：
+
 - State Files 机制可以改进我们的 `AuthStore`，从简单的 status 标记升级为完整的 session 数据导出/导入
 - Auth Vault 的加密存储可以增强安全性
 - Session Names 的概念可以支持多环境（开发/测试/生产）
@@ -122,13 +135,15 @@ Rust 编写的 CLI + daemon 架构。daemon 首次命令时自动启动并持久
 
 ### 3. Unbrowse — ★ 推荐（长期性能优化）
 
-| 属性 | 值 |
-|------|---|
-| GitHub | https://github.com/unbrowse-ai/unbrowse |
-| Stars | 617 |
-| 最后更新 | 2026-04-06（活跃） |
-| 语言 | 未详 |
-| 类型 | 类型 C — 跳过浏览器直接调 API |
+
+| 属性     | 值                                                                                  |
+| ------ | ---------------------------------------------------------------------------------- |
+| GitHub | [https://github.com/unbrowse-ai/unbrowse](https://github.com/unbrowse-ai/unbrowse) |
+| Stars  | 617                                                                                |
+| 最后更新   | 2026-04-06（活跃）                                                                     |
+| 语言     | 未详                                                                                 |
+| 类型     | 类型 C — 跳过浏览器直接调 API                                                                |
+
 
 **核心原理（独特且有创意）**：
 不是自动化浏览器，而是**捕获浏览器交互期间的内部 API 端点**，学习后直接调用这些 API。
@@ -139,6 +154,7 @@ Rust 编写的 CLI + daemon 架构。daemon 首次命令时自动启动并持久
 ```
 
 **性能提升数据**：
+
 - 从 5-30 秒 → 50-200ms（100x 提速）
 - 从 8000 tokens/action → 200 tokens/action（40x 节省）
 
@@ -153,6 +169,7 @@ Token/Session 过期 → 自动 fallback 回浏览器 → 重新学习
 这可以作为 `Provider.chat()` 的缓存加速层。
 
 **集成难度**：中
+
 - 有 npm 包，有 MCP 集成
 - 有 OpenClaw 专属插件：`npx unbrowse-openclaw install`
 - 需要设计缓存层和 fallback 机制
@@ -161,17 +178,20 @@ Token/Session 过期 → 自动 fallback 回浏览器 → 重新学习
 
 ### 4. BrowserOS — 不推荐集成
 
-| 属性 | 值 |
-|------|---|
-| GitHub | https://github.com/browseros-ai/BrowserOS |
-| Stars | 10,294 |
-| 最后更新 | 2026-04-05（活跃） |
-| 语言 | TypeScript |
-| 类型 | 独立浏览器产品 |
+
+| 属性     | 值                                                                                      |
+| ------ | -------------------------------------------------------------------------------------- |
+| GitHub | [https://github.com/browseros-ai/BrowserOS](https://github.com/browseros-ai/BrowserOS) |
+| Stars  | 10,294                                                                                 |
+| 最后更新   | 2026-04-05（活跃）                                                                         |
+| 语言     | TypeScript                                                                             |
+| 类型     | 独立浏览器产品                                                                                |
+
 
 **原理**：Chromium fork，内置 AI agent。支持从 Chrome 导入数据。
 
 **不推荐原因**：
+
 - 是独立浏览器产品，需要用户切换浏览器
 - 改变用户工作流成本太高
 - 不能作为库嵌入
@@ -180,21 +200,25 @@ Token/Session 过期 → 自动 fallback 回浏览器 → 重新学习
 
 ### 5. Notte — 有价值但依赖云服务
 
-| 属性 | 值 |
-|------|---|
-| GitHub | https://github.com/nottelabs/notte |
-| Stars | 1,928 |
-| 最后更新 | 2026-04-05（活跃） |
-| 类型 | 商业产品 + 开源框架 |
+
+| 属性     | 值                                                                        |
+| ------ | ------------------------------------------------------------------------ |
+| GitHub | [https://github.com/nottelabs/notte](https://github.com/nottelabs/notte) |
+| Stars  | 1,928                                                                    |
+| 最后更新   | 2026-04-05（活跃）                                                           |
+| 类型     | 商业产品 + 开源框架                                                              |
+
 
 **原理**：云端浏览器基础设施。Session Profiles 支持完整浏览器快照持久化，跨 session 复用。
 
 **有价值的点**：
+
 - CDP 兼容 — 可以直接用 `playwright-core.connectOverCDP()` 连接
 - Session 快照 — 比文件级持久化更完整
 - Agent Vaults — 加密凭据存储
 
 **不推荐直接集成原因**：
+
 - 云服务依赖（$0.05/hour）
 - 增加外部依赖
 - 适合需要云端浏览器的场景，本地使用没必要
@@ -203,15 +227,18 @@ Token/Session 过期 → 自动 fallback 回浏览器 → 重新学习
 
 ### 6. browser-use — 不推荐集成
 
-| 属性 | 值 |
-|------|---|
-| GitHub | https://github.com/browser-use/browser-use |
-| Stars | 86,138 |
-| 最后更新 | 2026-04-06（非常活跃） |
-| 语言 | Python |
-| 类型 | AI 浏览器自动化框架 |
+
+| 属性     | 值                                                                                        |
+| ------ | ---------------------------------------------------------------------------------------- |
+| GitHub | [https://github.com/browser-use/browser-use](https://github.com/browser-use/browser-use) |
+| Stars  | 86,138                                                                                   |
+| 最后更新   | 2026-04-06（非常活跃）                                                                         |
+| 语言     | Python                                                                                   |
+| 类型     | AI 浏览器自动化框架                                                                              |
+
 
 **不推荐原因**：
+
 - Python-only，与 TypeScript 栈完全不兼容
 - 面向"用 AI 控制浏览器"，和我们"复用浏览器状态发 API 请求"的目标不同
 - 集成需要 Python 运行时依赖
@@ -228,6 +255,7 @@ Token/Session 过期 → 自动 fallback 回浏览器 → 重新学习
 ```
 
 用户视角：
+
 ```bash
 # 安装 bb-browser（一次性）
 npm install -g bb-browser
@@ -242,6 +270,7 @@ npx web-model-bridge --browser-mode bb-browser
 ```
 
 **实现方式**：
+
 ```typescript
 // src/browser/manager.ts — 新增 bb-browser mode
 if (this._mode === 'bb-browser') {
@@ -281,17 +310,20 @@ web-model-bridge        Chrome 扩展              用户的 Chrome
 
 **与其他方案的对比**：
 
-| | CDP attach | bb-browser | Chrome 扩展桥接 |
-|---|---|---|---|
-| 需要重启 Chrome | 是 | 否（独立 Chrome） | **否** |
-| 复用用户当前 Chrome 的登录态 | 是 | 否（独立 profile） | **是** |
-| 安装步骤 | 修改启动参数 | `npm install -g bb-browser` | 安装一个扩展 |
-| 安全性 | CDP 暴露完整浏览器控制权 | daemon 有完整控制权 | **扩展只能做 fetch，权限可控** |
-| 开发成本 | 低（Playwright 支持） | 低（调用 daemon API） | 中（需开发扩展 + WebSocket） |
+
+|                    | CDP attach       | bb-browser                  | Chrome 扩展桥接          |
+| ------------------ | ---------------- | --------------------------- | -------------------- |
+| 需要重启 Chrome        | 是                | 否（独立 Chrome）                | **否**                |
+| 复用用户当前 Chrome 的登录态 | 是                | 否（独立 profile）               | **是**                |
+| 安装步骤               | 修改启动参数           | `npm install -g bb-browser` | 安装一个扩展               |
+| 安全性                | CDP 暴露完整浏览器控制权   | daemon 有完整控制权               | **扩展只能做 fetch，权限可控** |
+| 开发成本               | 低（Playwright 支持） | 低（调用 daemon API）            | 中（需开发扩展 + WebSocket） |
+
 
 **关键优势**：这是唯一能直接复用用户**当前正在使用的** Chrome 的登录态、且不需要任何重启操作的方案。bb-browser 虽然不需要重启用户 Chrome，但它用的是独立 profile，用户还是需要在 bb-browser 的 Chrome 中重新登录。
 
 **实现复杂度**：中等。需要开发：
+
 - Chrome Manifest V3 扩展（background service worker + content script）
 - WebSocket 通信协议
 - web-model-bridge 端的 WebSocket 服务端
@@ -303,7 +335,7 @@ web-model-bridge        Chrome 扩展              用户的 Chrome
 
 ### 长期目标：Unbrowse API 学习加速
 
-Unbrowse（https://github.com/unbrowse-ai/unbrowse ，617 stars）采用了一种独特的思路：**不是自动化浏览器，而是从浏览器流量中学习 API 端点，之后直接 HTTP 调用，绕过浏览器。**
+Unbrowse（[https://github.com/unbrowse-ai/unbrowse](https://github.com/unbrowse-ai/unbrowse) ，617 stars）采用了一种独特的思路：**不是自动化浏览器，而是从浏览器流量中学习 API 端点，之后直接 HTTP 调用，绕过浏览器。**
 
 #### 核心原理
 
@@ -321,20 +353,24 @@ Unbrowse（https://github.com/unbrowse-ai/unbrowse ，617 stars）采用了一�
 ```
 
 **性能提升**：
+
 - 响应时间：5-30 秒 → 50-200ms（100x 提速）
 - Token 消耗：8000 tokens/action → 200 tokens/action（40x 节省）
 
 #### 三种执行策略
 
-| 策略 | 原理 | 速度 | 适用场景 |
-|------|------|------|---------|
-| **Server-side Direct Fetch** | 直接 HTTP 调用学习到的 API，注入 Cookie | 50-200ms | 大多数网站 |
-| **Trigger-and-Intercept** | 导航到页面让 JS 发请求，CDP 拦截响应 | 1-3s | 有复杂请求签名的网站（如 LinkedIn） |
-| **Full Browser Capture** | 完整浏览器会话 | 5-30s | 未映射的新工作流，同时学习生成 Skill |
+
+| 策略                           | 原理                           | 速度       | 适用场景                   |
+| ---------------------------- | ---------------------------- | -------- | ---------------------- |
+| **Server-side Direct Fetch** | 直接 HTTP 调用学习到的 API，注入 Cookie | 50-200ms | 大多数网站                  |
+| **Trigger-and-Intercept**    | 导航到页面让 JS 发请求，CDP 拦截响应       | 1-3s     | 有复杂请求签名的网站（如 LinkedIn） |
+| **Full Browser Capture**     | 完整浏览器会话                      | 5-30s    | 未映射的新工作流，同时学习生成 Skill  |
+
 
 #### 认证方式（关键创新）
 
 Unbrowse **直接解密 Chrome 的 Cookie 数据库文件**：
+
 - macOS：`~/Library/Application Support/Google/Chrome/{Profile}/Network/Cookies`
 - 解密密钥通过 macOS Keychain 获取
 - 每次执行时实时读取，不需要手动复制 Cookie
@@ -345,6 +381,7 @@ Unbrowse **直接解密 Chrome 的 Cookie 数据库文件**：
 #### Skill 数据结构
 
 一个 Skill 包含：
+
 - `url_template`：参数化的 API URL（如 `https://x.com/i/api/graphql/{query_hash}?variables={vars}`）
 - `headers_template`：请求头模板
 - `csrf_plan`：CSRF token 获取策略（来源、刷新规则）
@@ -387,10 +424,13 @@ Provider.chat() 调用链：
 
 ## 最终模式对比
 
-| 模式 | 需要重启 Chrome | 复用登录态 | 额外依赖 | 用户体验 | 速度 |
-|------|---------------|-----------|---------|---------|------|
-| `attach` (CDP) | 是 | 是 | 无 | 中 | 正常 |
-| `launch` | 否 | 否 | 无 | 差 | 正常 |
-| `bb-browser` ★ | 否 | 是（独立 profile） | bb-browser | 好 | 正常 |
-| Chrome 扩展桥接 | **否** | **是（当前 Chrome）** | 扩展开发 | **最佳** | 正常 |
-| Unbrowse (未来) | 否 | 是（读 Cookie DB） | unbrowse | 极佳 | **100x 加速** |
+
+| 模式             | 需要重启 Chrome | 复用登录态            | 额外依赖       | 用户体验   | 速度          |
+| -------------- | ----------- | ---------------- | ---------- | ------ | ----------- |
+| `attach` (CDP) | 是           | 是                | 无          | 中      | 正常          |
+| `launch`       | 否           | 否                | 无          | 差      | 正常          |
+| `bb-browser` ★ | 否           | 是（独立 profile）    | bb-browser | 好      | 正常          |
+| Chrome 扩展桥接    | **否**       | **是（当前 Chrome）** | 扩展开发       | **最佳** | 正常          |
+| Unbrowse (未来)  | 否           | 是（读 Cookie DB）   | unbrowse   | 极佳     | **100x 加速** |
+
+
