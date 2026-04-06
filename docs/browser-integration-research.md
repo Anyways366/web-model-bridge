@@ -260,19 +260,137 @@ if (this._mode === 'bb-browser') {
 - 加密凭据存储（AES-256-GCM）
 - 多环境切换（Session Names）
 
+### 中期目标（备选）：Chrome 扩展桥接
+
+另一种"不关 Chrome + 复用登录态"的方案，是开发一个 Chrome 扩展作为 web-model-bridge 和用户浏览器之间的通信桥梁。
+
+**原理**：
+
+```
+web-model-bridge        Chrome 扩展              用户的 Chrome
+(HTTP 服务)     ←→     (安装在浏览器里)   ←→     (已登录各网站)
+    ↑                       ↑                        ↑
+  接收 API 请求      WebSocket 通信           执行 fetch 带 Cookie
+```
+
+1. 用户在 Chrome 里安装一个小扩展
+2. 扩展在后台建立 WebSocket 连接到 web-model-bridge 服务
+3. 当 web-model-bridge 收到 API 请求时，通过 WebSocket 告诉扩展："帮我在浏览器里访问 claude.ai/api/xxx"
+4. 扩展在浏览器上下文中执行 `fetch()`，**自动带上用户已有的 Cookie**
+5. 扩展把响应发回给 web-model-bridge
+
+**与其他方案的对比**：
+
+| | CDP attach | bb-browser | Chrome 扩展桥接 |
+|---|---|---|---|
+| 需要重启 Chrome | 是 | 否（独立 Chrome） | **否** |
+| 复用用户当前 Chrome 的登录态 | 是 | 否（独立 profile） | **是** |
+| 安装步骤 | 修改启动参数 | `npm install -g bb-browser` | 安装一个扩展 |
+| 安全性 | CDP 暴露完整浏览器控制权 | daemon 有完整控制权 | **扩展只能做 fetch，权限可控** |
+| 开发成本 | 低（Playwright 支持） | 低（调用 daemon API） | 中（需开发扩展 + WebSocket） |
+
+**关键优势**：这是唯一能直接复用用户**当前正在使用的** Chrome 的登录态、且不需要任何重启操作的方案。bb-browser 虽然不需要重启用户 Chrome，但它用的是独立 profile，用户还是需要在 bb-browser 的 Chrome 中重新登录。
+
+**实现复杂度**：中等。需要开发：
+- Chrome Manifest V3 扩展（background service worker + content script）
+- WebSocket 通信协议
+- web-model-bridge 端的 WebSocket 服务端
+- 扩展发布到 Chrome Web Store 或提供 .crx 离线安装
+
+**这是 OpenCLI 项目采用的方案**（见 `extension/` 目录），已验证可行。
+
+---
+
 ### 长期目标：Unbrowse API 学习加速
 
-- 首次请求走浏览器，Unbrowse 学习 API
-- 后续请求直接 HTTP 调用
-- Token 过期自动 fallback 回浏览器
+Unbrowse（https://github.com/unbrowse-ai/unbrowse ，617 stars）采用了一种独特的思路：**不是自动化浏览器，而是从浏览器流量中学习 API 端点，之后直接 HTTP 调用，绕过浏览器。**
+
+#### 核心原理
+
+```
+首次请求（慢路径，~12s）：
+  启动 Chrome → 导航到目标网站 → CDP 拦截所有网络请求
+  → 从流量中提取 API 端点 → 参数化为 URL 模板
+  → 保存为 "Skill"（含端点、headers、认证方式、响应 schema）
+  → 发布到本地缓存和共享 marketplace
+
+后续请求（快路径，50-200ms）：
+  查本地缓存找到 Skill → 从 Chrome 的 Cookie 数据库实时解密读取 Cookie
+  → 直接 fetch() 调用学习到的 API 端点 → 返回 JSON 数据
+  → 完全跳过浏览器
+```
+
+**性能提升**：
+- 响应时间：5-30 秒 → 50-200ms（100x 提速）
+- Token 消耗：8000 tokens/action → 200 tokens/action（40x 节省）
+
+#### 三种执行策略
+
+| 策略 | 原理 | 速度 | 适用场景 |
+|------|------|------|---------|
+| **Server-side Direct Fetch** | 直接 HTTP 调用学习到的 API，注入 Cookie | 50-200ms | 大多数网站 |
+| **Trigger-and-Intercept** | 导航到页面让 JS 发请求，CDP 拦截响应 | 1-3s | 有复杂请求签名的网站（如 LinkedIn） |
+| **Full Browser Capture** | 完整浏览器会话 | 5-30s | 未映射的新工作流，同时学习生成 Skill |
+
+#### 认证方式（关键创新）
+
+Unbrowse **直接解密 Chrome 的 Cookie 数据库文件**：
+- macOS：`~/Library/Application Support/Google/Chrome/{Profile}/Network/Cookies`
+- 解密密钥通过 macOS Keychain 获取
+- 每次执行时实时读取，不需要手动复制 Cookie
+- 只要用户在 Chrome 中保持登录，agent 就自动拥有认证
+
+这意味着：**完全不需要用户做任何登录操作**，也不需要重启 Chrome。
+
+#### Skill 数据结构
+
+一个 Skill 包含：
+- `url_template`：参数化的 API URL（如 `https://x.com/i/api/graphql/{query_hash}?variables={vars}`）
+- `headers_template`：请求头模板
+- `csrf_plan`：CSRF token 获取策略（来源、刷新规则）
+- `oauth_plan`：OAuth 配置
+- `response_schema`：推断出的响应 JSON Schema
+- `operation_graph`：多步 API 调用的 DAG 依赖关系
+- `exec_strategy`：学习到的最佳执行策略
+- `reliability_score`：可靠性评分
+
+#### 技术栈
+
+- **Kuri**：Zig 编写的原生 CDP broker（464KB，3ms 冷启动），取代 Playwright（80-150MB，1-3s 冷启动）
+- **不依赖 Playwright/Puppeteer**：直接通过 HTTP API 说 CDP 协议
+- 有 npm 包，有 MCP 集成
+
+#### 与 web-model-bridge 的集成设想
+
+```
+Provider.chat() 调用链：
+  
+  第一次请求 deepseek-web：
+    → BrowserManager.fetchInBrowser()（走浏览器）
+    → Unbrowse 在后台捕获 DeepSeek 的 API 端点
+    → 生成 Skill 并缓存
+  
+  第二次请求 deepseek-web：
+    → 查到 Skill 缓存
+    → 直接 fetch() 调用 DeepSeek API + 从 Cookie 数据库注入认证
+    → 50ms 完成（跳过浏览器）
+  
+  Cookie 过期：
+    → fetch 返回 401
+    → 自动 fallback 回浏览器路径
+    → 重新学习
+```
+
+**集成难度**：中。有 npm 包，有 OpenClaw 专属插件（`npx unbrowse-openclaw install`）。需要设计缓存层和 fallback 机制。
 
 ---
 
 ## 最终模式对比
 
-| 模式 | 需要重启 Chrome | 复用登录态 | 额外依赖 | 用户体验 |
-|------|---------------|-----------|---------|---------|
-| `attach` (CDP) | 是 | 是 | 无 | 中（需改启动方式） |
-| `launch` | 否 | 否 | 无 | 差（需重新登录） |
-| `bb-browser` ★ | **否** | **是** | bb-browser | **最佳** |
-| Unbrowse (未来) | 首次是 | 学习后跳过 | unbrowse | 极佳（100x 加速） |
+| 模式 | 需要重启 Chrome | 复用登录态 | 额外依赖 | 用户体验 | 速度 |
+|------|---------------|-----------|---------|---------|------|
+| `attach` (CDP) | 是 | 是 | 无 | 中 | 正常 |
+| `launch` | 否 | 否 | 无 | 差 | 正常 |
+| `bb-browser` ★ | 否 | 是（独立 profile） | bb-browser | 好 | 正常 |
+| Chrome 扩展桥接 | **否** | **是（当前 Chrome）** | 扩展开发 | **最佳** | 正常 |
+| Unbrowse (未来) | 否 | 是（读 Cookie DB） | unbrowse | 极佳 | **100x 加速** |
