@@ -94,9 +94,39 @@ export class BrowserManager {
     return this.context;
   }
 
+  // Cache: domain → page (avoid re-navigating for same domain)
+  private domainPages = new Map<string, Page>();
+
+  /**
+   * Execute fetch in browser context. Navigates to the target domain first
+   * so that cookies are available and CORS is not an issue.
+   */
   async fetchInBrowser(url: string, init: RequestInit): Promise<Response> {
     const ctx = await this.ensureBrowser();
-    const page = ctx.pages()[0] || await ctx.newPage();
+    const targetOrigin = new URL(url).origin; // e.g. "https://chat.deepseek.com"
+
+    // Get or create a page on the target domain
+    let page = this.domainPages.get(targetOrigin);
+    if (page && page.isClosed()) {
+      this.domainPages.delete(targetOrigin);
+      page = undefined;
+    }
+
+    if (!page) {
+      page = await ctx.newPage();
+      try {
+        // Navigate to target domain root to establish same-origin context
+        await page.goto(targetOrigin, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      } catch {
+        // Some sites may block direct navigation; try with just the origin
+        try {
+          await page.goto(targetOrigin + '/', { waitUntil: 'commit', timeout: 10000 });
+        } catch {
+          // Even if navigation partially fails, the page is now on the right domain
+        }
+      }
+      this.domainPages.set(targetOrigin, page);
+    }
 
     const result = await page.evaluate(
       async ([fetchUrl, fetchInit]: [string, { method?: string; headers?: Record<string, string>; body?: string }]) => {
@@ -315,6 +345,7 @@ export class BrowserManager {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
+    this.domainPages.clear();
     if (this.browser) {
       await this.browser.close().catch(() => {});
       this.browser = null;
