@@ -147,6 +147,7 @@ program
   .option('-v, --verbose', 'verbose logging')
   .option('--browser-mode <mode>', 'browser mode: attach (default) or launch', 'attach')
   .option('--cdp-url <url>', 'Chrome CDP URL for attach mode', 'http://127.0.0.1:9222')
+  .option('--chrome-profile <dir>', 'Chrome user data directory (e.g. ~/.openclaw/browser/openclaw/user-data)')
   .action(async (opts) => {
     console.log('');
 
@@ -187,6 +188,8 @@ program
     const browserMode = (opts.browserMode === 'launch' ? 'launch' : 'attach') as 'attach' | 'launch';
     const cdpPort = parseInt(new URL(opts.cdpUrl).port, 10) || 9222;
     const cdpUrl = opts.cdpUrl;
+    // Chrome profile: custom > config > default
+    const chromeProfileDir = opts.chromeProfile ?? config.browser.profileDir ?? join(stateDir, 'chrome-profile');
 
     if (browserMode === 'attach') {
       const cdpAvailable = await checkCDP(cdpUrl);
@@ -202,7 +205,6 @@ program
           // Try launching a SECOND Chrome with independent profile + CDP
           console.log(chalk.gray('  … Chrome running without CDP. Launching a dedicated instance...'));
 
-          const chromeProfileDir = join(stateDir, 'chrome-profile');
           const launched = await launchChromeWithCDP(cdpPort, chromeProfileDir);
           if (launched) {
             console.log(chalk.green('  ✓') + ` Dedicated Chrome launched with CDP at port ${cdpPort}`);
@@ -218,7 +220,6 @@ program
           // Chrome not running at all — auto-launch with CDP + dedicated profile
           console.log(chalk.gray('  … Chrome not running, launching with debug port...'));
 
-          const chromeProfileDir = join(stateDir, 'chrome-profile');
           const launched = await launchChromeWithCDP(cdpPort, chromeProfileDir);
           if (launched) {
             console.log(chalk.green('  ✓') + ` Chrome launched with CDP at port ${cdpPort}`);
