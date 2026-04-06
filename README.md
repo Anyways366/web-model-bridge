@@ -28,6 +28,27 @@ Your AI Tool  →  web-model-bridge  →  Browser  →  Web AI Model
 
 **How it works:** You log into AI websites once through a Dashboard. The bridge then uses your browser session to forward API requests — no API keys, no tokens, no cost.
 
+## Why web-model-bridge?
+
+Compared to alternatives like gpt4free (66K stars), CLIProxyAPI (23K stars), and chat2api (3.4K stars):
+
+| | web-model-bridge | gpt4free | CLIProxyAPI | chat2api |
+|---|---|---|---|---|
+| **Approach** | Real browser automation | Reverse-engineered APIs | CLI OAuth proxy | Token simulation |
+| **Anti-blocking** | **Strongest** — real browser fingerprint | Weak — APIs break often | Medium | Weak — Cloudflare blocks |
+| **Cost** | **Free** — web free tier only | Free | **Needs $20-100/mo subscription** | Free |
+| **Platforms** | **11 platforms, 16 models** | Varies (unstable) | 4-5 platforms | ChatGPT only |
+| **API formats** | **OpenAI + Anthropic** | OpenAI only | OpenAI + Anthropic | OpenAI only |
+| **Language** | TypeScript (Node.js native) | Python | Go | Python |
+
+**Core advantages:**
+
+1. **Strongest anti-blocking** — Uses Playwright real browser, websites can't distinguish from normal browsing
+2. **Truly free** — Only needs free web accounts, no paid subscriptions required
+3. **Widest coverage** — 11 platforms (international + Chinese), 16 models in one bridge
+4. **Dual API format** — Both `/v1/chat/completions` (OpenAI) and `/v1/messages` (Anthropic), works with every AI tool
+5. **Node.js ecosystem** — TypeScript native, `npx web-model-bridge` zero-install startup
+
 ## Features
 
 
