@@ -314,18 +314,19 @@ export class BrowserManager {
    * Returns a map of providerId → true for providers with cookies.
    */
   async autoDetectAuth(): Promise<Record<string, boolean>> {
-    const PROVIDER_DOMAINS: Record<string, string> = {
-      'claude-web': 'claude.ai',
-      'chatgpt-web': 'chatgpt.com',
-      'deepseek-web': 'deepseek.com',
-      'kimi-web': 'moonshot.cn',
-      'qwen-web': 'qwen.ai',
-      'glm-web': 'chatglm.cn',
-      'grok-web': 'grok.com',
-      'gemini-web': 'google.com',
-      'perplexity-web': 'perplexity.ai',
-      'doubao-web': 'doubao.com',
-      'xiaomimo-web': 'xiaomimimo.com',
+    // Each provider's key session cookie that indicates a valid login
+    const SESSION_COOKIES: Record<string, { domain: string; cookieNames: string[] }> = {
+      'claude-web': { domain: 'claude.ai', cookieNames: ['sessionKey'] },
+      'chatgpt-web': { domain: 'chatgpt.com', cookieNames: ['__Secure-next-auth.session-token', '__Secure-next-auth.session-token.0'] },
+      'deepseek-web': { domain: 'deepseek.com', cookieNames: ['ds_session_id', 'token'] },
+      'kimi-web': { domain: 'moonshot.cn', cookieNames: ['access_token'] },
+      'qwen-web': { domain: 'qwen.ai', cookieNames: ['cna', 'ajs_anonymous_id'] },
+      'glm-web': { domain: 'chatglm.cn', cookieNames: ['chatglm_refresh_token'] },
+      'grok-web': { domain: 'grok.com', cookieNames: ['sso', 'ct0'] },
+      'gemini-web': { domain: 'google.com', cookieNames: ['SID', '__Secure-1PSID'] },
+      'perplexity-web': { domain: 'perplexity.ai', cookieNames: ['__Secure-next-auth.session-token', 'next-auth.session-token'] },
+      'doubao-web': { domain: 'doubao.com', cookieNames: ['sessionid'] },
+      'xiaomimo-web': { domain: 'xiaomimimo.com', cookieNames: ['sessionid', 'token'] },
     };
 
     const result: Record<string, boolean> = {};
@@ -334,13 +335,16 @@ export class BrowserManager {
       const ctx = await this.ensureBrowser();
       const cookies = await ctx.cookies();
 
-      for (const [providerId, domain] of Object.entries(PROVIDER_DOMAINS)) {
-        const domainParts = domain.split('.').slice(-2).join('.');
-        const found = cookies.filter(c => c.domain.includes(domainParts));
-        result[providerId] = found.length > 0;
+      for (const [providerId, config] of Object.entries(SESSION_COOKIES)) {
+        const domainCookies = cookies.filter(c => c.domain.includes(config.domain));
+        // Check if any of the expected session cookies exist
+        const hasSession = config.cookieNames.some(name =>
+          domainCookies.some(c => c.name === name && c.value.length > 0)
+        );
+        result[providerId] = hasSession;
       }
     } catch {
-      // If browser not available, return all false
+      // Browser not available
     }
 
     return result;

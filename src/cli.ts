@@ -260,6 +260,9 @@ program
         if (id === 'claude-web') {
           // Claude needs getPage for multi-step API calls in browser context
           registry.register(new ClaudeProvider(authStore, browserFetch, getPage));
+        } else if (id === 'deepseek-web') {
+          // DeepSeek needs getPage for PoW challenge + multi-step API calls
+          registry.register(new DeepSeekProvider(authStore, browserFetch, getPage));
         } else {
           registry.register(new Ctor(authStore, browserFetch));
         }
