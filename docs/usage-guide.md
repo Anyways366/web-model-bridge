@@ -13,6 +13,7 @@ npx web-model-bridge
 ```
 
 启动后你会看到：
+
 ```
   ✓ Server running at http://localhost:3456
   ✓ API Base: http://localhost:3456/v1
@@ -25,21 +26,23 @@ npx web-model-bridge
 
 ### 第二步：在 Dashboard 登录 Web 模型
 
-浏览器会自动打开 Dashboard（http://localhost:3456）。你会看到 11 个 Provider：
+浏览器会自动打开 Dashboard（[http://localhost:3456）。你会看到](http://localhost:3456）。你会看到) 11 个 Provider：
 
-| Provider | 网站 | 免费模型 |
-|----------|------|---------|
-| Claude Web | claude.ai | Sonnet 4.6, Haiku 4.5 |
-| ChatGPT Web | chatgpt.com | GPT-5.3, GPT-5.4 Mini |
-| DeepSeek Web | chat.deepseek.com | DeepSeek V4, V4 Reasoner |
-| Kimi Web | kimi.moonshot.cn | Kimi K2.5 |
-| Qwen Web | chat.qwen.ai | Qwen 3.5 Plus, QwQ |
-| GLM Web | chatglm.cn | GLM-5 |
-| Grok Web | grok.com | Grok 3 |
-| Gemini Web | gemini.google.com | Gemini 3 Flash, 2.5 Pro |
-| Perplexity Web | perplexity.ai | Perplexity |
-| Doubao Web | doubao.com | Doubao Seed 2.0 Pro |
-| Xiaomimo Web | aistudio.xiaomimimo.com | MiMo V2 Pro |
+
+| Provider       | 网站                      | 免费模型                     |
+| -------------- | ----------------------- | ------------------------ |
+| Claude Web     | claude.ai               | Sonnet 4.6, Haiku 4.5    |
+| ChatGPT Web    | chatgpt.com             | GPT-5.3, GPT-5.4 Mini    |
+| DeepSeek Web   | chat.deepseek.com       | DeepSeek V4, V4 Reasoner |
+| Kimi Web       | kimi.moonshot.cn        | Kimi K2.5                |
+| Qwen Web       | chat.qwen.ai            | Qwen 3.5 Plus, QwQ       |
+| GLM Web        | chatglm.cn              | GLM-5                    |
+| Grok Web       | grok.com                | Grok 3                   |
+| Gemini Web     | gemini.google.com       | Gemini 3 Flash, 2.5 Pro  |
+| Perplexity Web | perplexity.ai           | Perplexity               |
+| Doubao Web     | doubao.com              | Doubao Seed 2.0 Pro      |
+| Xiaomimo Web   | aistudio.xiaomimimo.com | MiMo V2 Pro              |
+
 
 点击 **[Login]** 按钮 → 弹出登录页面 → 正常登录（和你平时上网一样）→ 登录完成后窗口自动关闭 → Dashboard 显示 ✓ 已认证。
 
@@ -110,13 +113,14 @@ Claude Code 会将请求发送到 `http://localhost:3456/v1/messages` → web-mo
 2. **Override OpenAI Base URL**: `http://localhost:3456/v1`
 3. **OpenAI API Key**: 任意值（如 `not-needed`）
 4. 点击 **+ Add Model**，输入模型 ID，例如：
-   - `claude-web/claude-sonnet-4-6`
-   - `deepseek-web/deepseek-v4`
-   - `qwen-web/qwen-3.5-plus`
+  - `claude-web/claude-sonnet-4-6`
+  - `deepseek-web/deepseek-v4`
+  - `qwen-web/qwen-3.5-plus`
 
 #### 其他支持 OpenAI API 的工具
 
 只要工具支持自定义 `base_url`，指向 `http://localhost:3456/v1` 即可。例如：
+
 - Open WebUI、LobeChat、ChatBox 等
 
 ---
@@ -125,24 +129,26 @@ Claude Code 会将请求发送到 `http://localhost:3456/v1/messages` → web-mo
 
 所有模型 ID 格式为 `{provider}/{model}`：
 
-| 模型 ID | 名称 | 上下文 | 平台 |
-|---------|------|--------|------|
-| `claude-web/claude-sonnet-4-6` | Claude Sonnet 4.6 | 1M | claude.ai |
-| `claude-web/claude-haiku-4-5` | Claude Haiku 4.5 | 200K | claude.ai |
-| `chatgpt-web/gpt-5.3` | GPT-5.3 | 128K | chatgpt.com |
-| `chatgpt-web/gpt-5.4-mini` | GPT-5.4 Mini | 128K | chatgpt.com |
-| `deepseek-web/deepseek-v4` | DeepSeek V4 | 128K | chat.deepseek.com |
-| `deepseek-web/deepseek-v4-reasoner` | DeepSeek V4 Reasoner | 128K | chat.deepseek.com |
-| `kimi-web/kimi-k2.5` | Kimi K2.5 | 256K | kimi.moonshot.cn |
-| `qwen-web/qwen-3.5-plus` | Qwen 3.5 Plus | 262K | chat.qwen.ai |
-| `qwen-web/qwq` | QwQ | 32K | chat.qwen.ai |
-| `glm-web/glm-5` | GLM-5 | 128K | chatglm.cn |
-| `grok-web/grok-3` | Grok 3 | 128K | grok.com |
-| `gemini-web/gemini-3-flash` | Gemini 3 Flash | 1M | gemini.google.com |
-| `gemini-web/gemini-2.5-pro` | Gemini 2.5 Pro | 1M | gemini.google.com |
-| `perplexity-web/perplexity-default` | Perplexity | 128K | perplexity.ai |
-| `doubao-web/doubao-seed-2.0-pro` | Doubao Seed 2.0 Pro | 256K | doubao.com |
-| `xiaomimo-web/mimo-v2-pro` | MiMo V2 Pro | 1M | aistudio.xiaomimimo.com |
+
+| 模型 ID                               | 名称                   | 上下文  | 平台                      |
+| ----------------------------------- | -------------------- | ---- | ----------------------- |
+| `claude-web/claude-sonnet-4-6`      | Claude Sonnet 4.6    | 1M   | claude.ai               |
+| `claude-web/claude-haiku-4-5`       | Claude Haiku 4.5     | 200K | claude.ai               |
+| `chatgpt-web/gpt-5.3`               | GPT-5.3              | 128K | chatgpt.com             |
+| `chatgpt-web/gpt-5.4-mini`          | GPT-5.4 Mini         | 128K | chatgpt.com             |
+| `deepseek-web/deepseek-v4`          | DeepSeek V4          | 128K | chat.deepseek.com       |
+| `deepseek-web/deepseek-v4-reasoner` | DeepSeek V4 Reasoner | 128K | chat.deepseek.com       |
+| `kimi-web/kimi-k2.5`                | Kimi K2.5            | 256K | kimi.moonshot.cn        |
+| `qwen-web/qwen-3.5-plus`            | Qwen 3.5 Plus        | 262K | chat.qwen.ai            |
+| `qwen-web/qwq`                      | QwQ                  | 32K  | chat.qwen.ai            |
+| `glm-web/glm-5`                     | GLM-5                | 128K | chatglm.cn              |
+| `grok-web/grok-3`                   | Grok 3               | 128K | grok.com                |
+| `gemini-web/gemini-3-flash`         | Gemini 3 Flash       | 1M   | gemini.google.com       |
+| `gemini-web/gemini-2.5-pro`         | Gemini 2.5 Pro       | 1M   | gemini.google.com       |
+| `perplexity-web/perplexity-default` | Perplexity           | 128K | perplexity.ai           |
+| `doubao-web/doubao-seed-2.0-pro`    | Doubao Seed 2.0 Pro  | 256K | doubao.com              |
+| `xiaomimo-web/mimo-v2-pro`          | MiMo V2 Pro          | 1M   | aistudio.xiaomimimo.com |
+
 
 ---
 
@@ -150,10 +156,12 @@ Claude Code 会将请求发送到 `http://localhost:3456/v1/messages` → web-mo
 
 web-model-bridge 同时支持两种 API 格式：
 
-| 格式 | 端点 | 适用工具 |
-|------|------|---------|
-| OpenAI | `POST /v1/chat/completions` | OpenClaw, Cursor, Open WebUI, LobeChat |
-| Anthropic | `POST /v1/messages` | Claude Code |
+
+| 格式        | 端点                          | 适用工具                                   |
+| --------- | --------------------------- | -------------------------------------- |
+| OpenAI    | `POST /v1/chat/completions` | OpenClaw, Cursor, Open WebUI, LobeChat |
+| Anthropic | `POST /v1/messages`         | Claude Code                            |
+
 
 两种格式使用相同的模型 ID 和 Provider，只是请求/响应格式不同。
 
@@ -199,9 +207,12 @@ logging:
 
 ## 故障排查
 
-| 问题 | 解决方案 |
-|------|---------|
-| "Browser not connected" | 确认已安装 Google Chrome |
-| Cookie 过期 | Dashboard 上点击 [重新登录] |
-| 端口被占用 | `web-model-bridge -p 8080` |
-| Claude Code 连接失败 | 确认 `ANTHROPIC_BASE_URL` 不带 `/v1` 后缀 |
+
+| 问题                      | 解决方案                                |
+| ----------------------- | ----------------------------------- |
+| "Browser not connected" | 确认已安装 Google Chrome                 |
+| Cookie 过期               | Dashboard 上点击 [重新登录]                |
+| 端口被占用                   | `web-model-bridge -p 8080`          |
+| Claude Code 连接失败        | 确认 `ANTHROPIC_BASE_URL` 不带 `/v1` 后缀 |
+
+

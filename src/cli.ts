@@ -105,13 +105,25 @@ program
       getBrowserStatus: () => browserManager.getStatus(),
       onLogin: async (providerId: string) => {
         const provider = registry.getProvider(providerId);
-        if (!provider) return { status: 'error' };
-        await browserManager.openForLogin(provider.info.loginUrl);
-        // After login window closes, mark provider as active.
-        // Real login detection will verify cookies in Phase 2.
-        authStore.setStatus(providerId, 'active');
-        return { status: 'login_started' };
+        if (!provider) return { status: 'error', message: `Provider "${providerId}" not found.` };
+
+        // Non-blocking: startLogin returns immediately after opening the browser.
+        // The onComplete callback fires later when the user closes the window.
+        await browserManager.startLogin(providerId, provider.info.loginUrl, (success) => {
+          if (success) {
+            authStore.setStatus(providerId, 'active');
+            console.log(chalk.green(`  ✓ ${providerId} login completed. Cookies saved.`));
+          } else {
+            console.log(chalk.yellow(`  ⚠ ${providerId} login did not complete.`));
+          }
+        });
+
+        return {
+          status: 'login_started',
+          message: 'A Chrome window should have opened. Please log in there.',
+        };
       },
+      getLoginState: () => browserManager.getLoginState(),
     });
 
     serve({

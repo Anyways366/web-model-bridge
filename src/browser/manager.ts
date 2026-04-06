@@ -2,10 +2,19 @@ import type { BrowserContext, Page } from 'playwright-core';
 import { findChromePath } from '../doctor.js';
 
 export type BrowserStatus = 'running' | 'idle' | 'stopped';
+export type LoginStatus = 'idle' | 'opening' | 'waiting_for_user' | 'success' | 'failed';
+
+export interface LoginState {
+  providerId: string | null;
+  status: LoginStatus;
+  message: string;
+  startedAt: number | null;
+}
 
 export class BrowserManager {
   private context: BrowserContext | null = null;
   private _status: BrowserStatus = 'stopped';
+  private _loginState: LoginState = { providerId: null, status: 'idle', message: '', startedAt: null };
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -17,6 +26,9 @@ export class BrowserManager {
     },
   ) {}
 
+  /**
+   * Launch Chrome in headless mode for API requests.
+   */
   async ensureBrowser(): Promise<BrowserContext> {
     if (this.context) {
       this.resetIdleTimer();
@@ -25,6 +37,10 @@ export class BrowserManager {
 
     const { chromium } = await import('playwright-core');
     const executablePath = this.findChrome();
+
+    if (!executablePath) {
+      throw new Error('Chrome not found. Install Google Chrome first.');
+    }
 
     this.context = await chromium.launchPersistentContext(this.profileDir, {
       headless: true,
@@ -46,10 +62,6 @@ export class BrowserManager {
     const ctx = await this.ensureBrowser();
     const page = ctx.pages()[0] || await ctx.newPage();
 
-    // Use page.evaluate to execute fetch within browser context (carries cookies).
-    // NOTE: This buffers the full response. For true streaming, CDP-level interception
-    // (page.route or Fetch.requestPaused) would be needed. Acceptable for MVP since
-    // most web model responses are < 100KB and latency is dominated by model inference.
     const result = await page.evaluate(
       async ([fetchUrl, fetchInit]: [string, { method?: string; headers?: Record<string, string>; body?: string }]) => {
         const res = await fetch(fetchUrl, {
@@ -77,22 +89,130 @@ export class BrowserManager {
     });
   }
 
-  async openForLogin(loginUrl: string): Promise<void> {
-    const ctx = await this.ensureBrowser();
-    const page: Page = await ctx.newPage();
-    await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
+  /**
+   * Start login process. This is NON-BLOCKING — it launches a headed Chrome
+   * window and returns immediately. The returned Promise resolves when the
+   * browser window is opened (not when login completes).
+   *
+   * Call getLoginState() to check progress. The login completes when the user
+   * closes the window or the timeout expires.
+   */
+  async startLogin(providerId: string, loginUrl: string, onComplete: (success: boolean) => void): Promise<void> {
+    if (this._loginState.status === 'opening' || this._loginState.status === 'waiting_for_user') {
+      throw new Error(`Login already in progress for ${this._loginState.providerId}. Wait for it to complete or close the browser window.`);
+    }
 
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        page.close().catch(() => {});
-        resolve();
-      }, this.opts.loginTimeout * 1000);
+    this._loginState = {
+      providerId,
+      status: 'opening',
+      message: 'Launching Chrome...',
+      startedAt: Date.now(),
+    };
 
-      page.on('close', () => {
-        clearTimeout(timeout);
-        resolve();
+    try {
+      // Close existing headless context — we need a headed one for login
+      if (this.context) {
+        await this.context.close().catch(() => {});
+        this.context = null;
+      }
+
+      const { chromium } = await import('playwright-core');
+      const executablePath = this.findChrome();
+
+      if (!executablePath) {
+        this._loginState = { providerId, status: 'failed', message: 'Chrome not found. Install Google Chrome first.', startedAt: null };
+        onComplete(false);
+        return;
+      }
+
+      // Launch in HEADED mode so user can see and interact
+      const headedContext = await chromium.launchPersistentContext(this.profileDir, {
+        headless: false,
+        executablePath,
+        args: [
+          '--no-first-run',
+          '--no-default-browser-check',
+        ],
+        timeout: this.opts.startupTimeout,
       });
-    });
+
+      const page: Page = await headedContext.newPage();
+
+      this._loginState = {
+        providerId,
+        status: 'waiting_for_user',
+        message: `Chrome window opened. Please log in at ${loginUrl}`,
+        startedAt: Date.now(),
+      };
+
+      await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
+
+      // Wait for user to close the window OR timeout
+      // This runs in background — we already returned from startLogin
+      const waitForCompletion = async () => {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            page.close().catch(() => {});
+            resolve();
+          }, this.opts.loginTimeout * 1000);
+
+          page.on('close', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+
+          // Also listen for context disconnect (user closed entire Chrome)
+          headedContext.on('close', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+
+        // Login window closed — close the headed context and switch back to headless
+        await headedContext.close().catch(() => {});
+        this.context = null; // Will be re-created as headless on next request
+
+        this._loginState = {
+          providerId,
+          status: 'success',
+          message: `Login completed for ${providerId}. Cookies saved.`,
+          startedAt: null,
+        };
+
+        onComplete(true);
+
+        // Reset login state after 10 seconds
+        setTimeout(() => {
+          if (this._loginState.status === 'success') {
+            this._loginState = { providerId: null, status: 'idle', message: '', startedAt: null };
+          }
+        }, 10000);
+      };
+
+      // Fire and forget — don't await
+      waitForCompletion().catch((err) => {
+        this._loginState = {
+          providerId,
+          status: 'failed',
+          message: `Login failed: ${(err as Error).message}`,
+          startedAt: null,
+        };
+        onComplete(false);
+      });
+
+    } catch (err) {
+      this._loginState = {
+        providerId,
+        status: 'failed',
+        message: `Failed to launch Chrome: ${(err as Error).message}`,
+        startedAt: null,
+      };
+      onComplete(false);
+    }
+  }
+
+  getLoginState(): LoginState {
+    return { ...this._loginState };
   }
 
   async shutdown(): Promise<void> {

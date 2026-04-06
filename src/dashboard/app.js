@@ -110,7 +110,7 @@ async function loadProviders() {
 // Login flow
 async function loginProvider(providerId) {
   try {
-    showToast('Opening login window for ' + providerId + '...');
+    showToast('Launching Chrome for ' + providerId + '...');
     var res = await fetch('/webmodel/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -118,17 +118,38 @@ async function loginProvider(providerId) {
     });
     var data = await res.json();
     if (data.status === 'login_started') {
-      pollLogin(providerId);
+      showToast(data.message || 'Chrome window opened. Please log in.');
+      pollLoginStatus(providerId);
+    } else if (data.status === 'error' || data.error) {
+      showToast(data.message || data.error || 'Login failed');
     }
   } catch (err) {
     showToast('Login failed: ' + err.message);
   }
 }
 
-// Poll for login completion
-function pollLogin(providerId) {
+// Poll login status endpoint for real-time feedback
+function pollLoginStatus(providerId) {
   var interval = setInterval(async function () {
     try {
+      // Check login-status for detailed progress
+      var statusRes = await fetch('/webmodel/auth/login-status');
+      var statusData = await statusRes.json();
+      if (statusData.status === 'waiting_for_user') {
+        showToast('Waiting for you to log in at the Chrome window...');
+      } else if (statusData.status === 'success') {
+        clearInterval(interval);
+        showToast(providerId + ' login completed!');
+        loadProviders();
+        loadHealth();
+        return;
+      } else if (statusData.status === 'failed') {
+        clearInterval(interval);
+        showToast('Login failed: ' + statusData.message);
+        return;
+      }
+
+      // Also check provider status as backup
       var res = await fetch('/webmodel/providers');
       var data = await res.json();
       var provider = data.providers.find(function (p) {

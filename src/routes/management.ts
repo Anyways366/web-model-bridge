@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import { ProviderRegistry } from '../core/registry.js';
 import { AuthStore } from '../auth/store.js';
-import type { BrowserStatus } from '../browser/manager.js';
+import type { BrowserStatus, LoginState } from '../browser/manager.js';
 import type { MetricsCollector } from '../core/metrics.js';
 
 export interface ManagementDeps {
   registry: ProviderRegistry;
   authStore: AuthStore;
-  onLogin?: (providerId: string) => Promise<{ status: string }>;
+  onLogin?: (providerId: string) => Promise<{ status: string; message: string }>;
+  getLoginState?: () => LoginState;
   getBrowserStatus?: () => BrowserStatus;
   startTime?: number;
   metrics?: MetricsCollector;
@@ -32,19 +33,34 @@ export function managementRoutes(deps: ManagementDeps): Hono {
     }
     const provider = registry.getProvider(body.providerId);
     if (!provider) {
-      return c.json({ error: 'Unknown provider' }, 404);
+      return c.json({ error: 'Unknown provider', message: `Provider "${body.providerId}" not found.` }, 404);
     }
 
     if (!onLogin) {
-      return c.json({ error: 'Browser not available' }, 503);
+      return c.json({
+        error: 'Browser not available',
+        message: 'Browser manager is not configured. Restart the server.',
+      }, 503);
     }
 
     try {
-      await onLogin(body.providerId);
-      return c.json({ status: 'login_started', providerId: body.providerId });
+      // This returns immediately — login happens in background
+      const result = await onLogin(body.providerId);
+      return c.json(result);
     } catch (err) {
-      return c.json({ error: (err as Error).message }, 500);
+      return c.json({
+        status: 'error',
+        message: (err as Error).message,
+      }, 500);
     }
+  });
+
+  // New: poll login progress
+  app.get('/webmodel/auth/login-status', async (c) => {
+    if (!deps.getLoginState) {
+      return c.json({ providerId: null, status: 'idle', message: '' });
+    }
+    return c.json(deps.getLoginState());
   });
 
   app.post('/webmodel/auth/check', async (c) => {
