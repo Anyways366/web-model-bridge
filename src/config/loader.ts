@@ -14,6 +14,8 @@ export interface BridgeConfig {
     startupTimeout: number;
     idleShutdown: number;
     loginTimeout: number;
+    mode: 'attach' | 'launch';
+    cdpUrl: string;
   };
   providers: {
     enabled: string[];
@@ -42,6 +44,8 @@ export function defaultConfig(stateDir: string): BridgeConfig {
       startupTimeout: 30000,
       idleShutdown: 300,
       loginTimeout: 120,
+      mode: 'attach',
+      cdpUrl: 'http://127.0.0.1:9222',
     },
     providers: {
       enabled: [

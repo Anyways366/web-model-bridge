@@ -34,7 +34,7 @@ const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, i
   'doubao-web': DoubaoProvider,
   'xiaomimo-web': XiaomimoProvider,
 };
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { runDoctor, printDoctorResults } from './doctor.js';
@@ -52,6 +52,8 @@ program
   .option('--state-dir <dir>', 'data directory', DEFAULT_STATE_DIR)
   .option('--config <file>', 'config file path')
   .option('-v, --verbose', 'verbose logging')
+  .option('--browser-mode <mode>', 'browser mode: attach (default) or launch', 'attach')
+  .option('--cdp-url <url>', 'Chrome CDP URL for attach mode', 'http://127.0.0.1:9222')
   .action(async (opts) => {
     const stateDir = opts.stateDir;
     mkdirSync(stateDir, { recursive: true });
@@ -80,11 +82,38 @@ program
     const registry = new ProviderRegistry();
     const authStore = new AuthStore(stateDir);
 
-    const browserManager = new BrowserManager(config.browser.profileDir, {
+    const browserMode = (opts.browserMode === 'launch' ? 'launch' : 'attach') as 'attach' | 'launch';
+    const browserManager = new BrowserManager({
+      profileDir: config.browser.profileDir,
       startupTimeout: config.browser.startupTimeout,
       idleShutdown: config.browser.idleShutdown,
       loginTimeout: config.browser.loginTimeout,
+      cdpUrl: opts.cdpUrl,
+      mode: browserMode,
     });
+
+    // In attach mode, check if Chrome with CDP is reachable
+    if (browserMode === 'attach') {
+      const cdpAvailable = await browserManager.detectCDP();
+      if (cdpAvailable) {
+        console.log(chalk.green('  ✓') + ` Chrome CDP detected at ${opts.cdpUrl}`);
+      } else {
+        console.log('');
+        console.log(chalk.yellow('  ⚠ Chrome with remote debugging not detected.'));
+        console.log(chalk.yellow('    Start Chrome with debugging enabled:'));
+        console.log('');
+        if (platform() === 'darwin') {
+          console.log(chalk.gray('    /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222'));
+        } else if (platform() === 'win32') {
+          console.log(chalk.gray('    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222'));
+        } else {
+          console.log(chalk.gray('    google-chrome --remote-debugging-port=9222'));
+        }
+        console.log('');
+        console.log(chalk.yellow('    Or use launch mode: web-model-bridge --browser-mode launch'));
+        console.log('');
+      }
+    }
 
     // Browser fetch wrapper for providers
     const browserFetch = (url: string, init: RequestInit) =>
