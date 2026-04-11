@@ -27,28 +27,40 @@ describe('ProviderRegistry', () => {
     registry.register(deepseek);
   });
 
-  it('resolves provider from model ID', () => {
-    const result = registry.resolve('claude-web/claude-sonnet-4-6');
+  it('resolves provider from model ID', async () => {
+    const result = await registry.resolve('claude-web/claude-sonnet-4-6');
     expect(result.provider).toBe(claude);
     expect(result.model).toBe('claude-sonnet-4-6');
   });
 
-  it('resolves provider with different model', () => {
-    const result = registry.resolve('deepseek-web/deepseek-v4');
+  it('resolves provider with different model', async () => {
+    const result = await registry.resolve('deepseek-web/deepseek-v4');
     expect(result.provider).toBe(deepseek);
     expect(result.model).toBe('deepseek-v4');
   });
 
-  it('throws InvalidModelError for unknown provider', () => {
-    expect(() => registry.resolve('unknown/model')).toThrow(InvalidModelError);
+  it('throws InvalidModelError for unknown provider', async () => {
+    await expect(registry.resolve('unknown/model')).rejects.toThrow(InvalidModelError);
   });
 
-  it('throws InvalidModelError for malformed model ID', () => {
-    expect(() => registry.resolve('no-slash')).toThrow(InvalidModelError);
+  it('resolves model without provider prefix via fuzzy match', async () => {
+    const result = await registry.resolve('deepseek-v4');
+    expect(result.provider).toBe(deepseek);
+    expect(result.model).toBe('deepseek-v4');
   });
 
-  it('throws InvalidModelError for empty string', () => {
-    expect(() => registry.resolve('')).toThrow(InvalidModelError);
+  it('resolves model without slash via fuzzy match', async () => {
+    const result = await registry.resolve('claude-sonnet-4-6');
+    expect(result.provider).toBe(claude);
+    expect(result.model).toBe('claude-sonnet-4-6');
+  });
+
+  it('throws InvalidModelError for completely unknown model', async () => {
+    await expect(registry.resolve('nonexistent-model')).rejects.toThrow(InvalidModelError);
+  });
+
+  it('throws InvalidModelError for empty string', async () => {
+    await expect(registry.resolve('')).rejects.toThrow(InvalidModelError);
   });
 
   it('allModels aggregates from all authenticated providers', async () => {

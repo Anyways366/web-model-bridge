@@ -1,4 +1,4 @@
-import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
+import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebPrompt } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
 import { normalizeStandardSSE } from '../_shared/standard-stream.js';
 import { readSSE } from '../_shared/sse-reader.js';
@@ -50,7 +50,7 @@ export class GrokProvider extends BaseProvider {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: req.model,
-        messages: req.messages,
+        messages: [{ role: 'user', content: buildWebPrompt(req.messages) }],
         stream: true,
       }),
     });

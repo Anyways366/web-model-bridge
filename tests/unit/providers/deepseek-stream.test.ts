@@ -14,8 +14,8 @@ describe('DeepSeek stream normalizer', () => {
     expect(events).toEqual([{ type: 'done', reason: 'stop' }]);
   });
 
-  it('ignores [DONE] marker', () => {
-    expect(normalizeDeepSeekSSE('data: [DONE]')).toEqual([]);
+  it('parses [DONE] marker as done event', () => {
+    expect(normalizeDeepSeekSSE('data: [DONE]')).toEqual([{ type: 'done', reason: 'stop' }]);
   });
 
   it('ignores empty lines', () => {

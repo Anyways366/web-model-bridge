@@ -276,8 +276,8 @@ npm run typecheck     # TypeScript strict check
 ## Development
 
 ```bash
-git clone <repo-url>
-cd web-model-bridge
+git clone https://github.com/linuxhsj/WebModel.git
+cd WebModel
 npm install
 npm run dev           # Start in dev mode
 npm test              # Run tests

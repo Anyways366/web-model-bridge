@@ -1,7 +1,7 @@
-import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
+import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebPrompt } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
-import { normalizeDeepSeekSSE } from './stream.js';
-import { solvePowSha256, buildPowResponse, type DeepSeekPowChallenge } from './pow.js';
+
+import { solvePow, buildPowResponse, type DeepSeekPowChallenge } from './pow.js';
 import { DEEPSEEK_WEB_BASE_URL } from './client.js';
 import { AuthStore } from '../../auth/store.js';
 import type { Page } from 'playwright-core';
@@ -15,12 +15,19 @@ export class DeepSeekProvider extends BaseProvider {
     needsBrowser: true,
   };
 
+  private bearerToken: string | null = null;
+
   constructor(
     private authStore: AuthStore,
     _browserFetch?: (url: string, init: RequestInit) => Promise<Response>,
     private getPage?: (origin: string) => Promise<Page>,
   ) {
     super();
+  }
+
+  /** Set a bearer token for API authentication (e.g. from OpenClaw auth-profiles) */
+  setBearerToken(token: string): void {
+    this.bearerToken = token;
   }
 
   async login(context: { openUrl: (url: string) => Promise<void> }): Promise<void> {
@@ -51,34 +58,72 @@ export class DeepSeekProvider extends BaseProvider {
     try {
       const page = await this.getPage(DEEPSEEK_WEB_BASE_URL);
 
-      // Step 1: Create chat session
-      const sessionResult = await page.evaluate(async () => {
+      // Step 1: Extract bearer token
+      // DeepSeek stores JWT in a cookie named "ds_chat_token" or via login response.
+      // Strategy: try /api/v0/users/current with cookies → intercept from page.
+      let bearer = this.bearerToken;
+      if (!bearer) {
+        // Primary method: Intercept request headers by reloading the page.
+        // DeepSeek's frontend JS adds the Authorization header from its own state.
+        const tokenPromise = new Promise<string | null>((resolve) => {
+          const timeout = setTimeout(() => resolve(null), 10000);
+          const handler = (request: any) => {
+            const url = request.url() as string;
+            if (url.includes('/api/v0/')) {
+              const auth = request.headers()['authorization'] as string | undefined;
+              if (auth?.startsWith('Bearer ')) {
+                clearTimeout(timeout);
+                page.off('request', handler);
+                resolve(auth.slice(7));
+              }
+            }
+          };
+          page.on('request', handler);
+        });
+        // Reload the page — DeepSeek frontend will fire API calls with Bearer token
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => {});
+        bearer = await tokenPromise;
+      }
+      if (!bearer) {
+        yield { type: 'error', message: 'DeepSeek: could not extract bearer token. Please re-login at chat.deepseek.com' };
+        return;
+      }
+
+      // Step 2: Create chat session
+      const sessionResult = await page.evaluate(async (bearerToken: string | null) => {
         try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
           const res = await fetch('/api/v0/chat_session/create', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: '{}',
             credentials: 'include',
           });
-          if (!res.ok) return { error: `HTTP ${res.status}` };
+          if (!res.ok) {
+            const text = await res.text();
+            return { error: `HTTP ${res.status}: ${text.substring(0, 200)}` };
+          }
           const data = await res.json();
           return { sessionId: data?.data?.biz_data?.id || data?.data?.id };
         } catch (e: any) {
           return { error: e.message };
         }
-      });
+      }, bearer);
 
       if (sessionResult.error || !sessionResult.sessionId) {
         yield { type: 'error', message: `DeepSeek session create failed: ${sessionResult.error || 'no session id'}` };
         return;
       }
 
-      // Step 2: Get PoW challenge
-      const challengeResult = await page.evaluate(async () => {
+      // Step 3: Get PoW challenge
+      const challengeResult = await page.evaluate(async (bearerToken: string | null) => {
         try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
           const res = await fetch('/api/v0/chat/create_pow_challenge', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ target_path: '/api/v0/chat/completion' }),
             credentials: 'include',
           });
@@ -89,43 +134,42 @@ export class DeepSeekProvider extends BaseProvider {
         } catch (e: any) {
           return { error: e.message };
         }
-      });
+      }, bearer);
 
       if (challengeResult.error || !challengeResult.challenge) {
         yield { type: 'error', message: `DeepSeek PoW challenge failed: ${challengeResult.error || 'no challenge'}` };
         return;
       }
 
-      // Step 3: Solve PoW (runs in Node.js, not browser)
+      // Step 4: Solve PoW (runs in Node.js, not browser)
       const challenge = challengeResult.challenge as DeepSeekPowChallenge;
       let powResponse: string;
       try {
-        const answer = solvePowSha256(challenge);
+        const answer = await solvePow(challenge);
         powResponse = buildPowResponse(challenge, answer, '/api/v0/chat/completion');
       } catch (err) {
         yield { type: 'error', message: `DeepSeek PoW solve failed: ${(err as Error).message}` };
         return;
       }
 
-      // Step 4: Build prompt
-      const prompt = req.messages
-        .filter(m => m.role === 'user')
-        .map(m => m.content)
-        .join('\n');
+      // Step 5: Build prompt
+      const prompt = buildWebPrompt(req.messages);
 
       const isThinking = req.model.includes('reasoner');
 
-      // Step 5: Send message with PoW header, read SSE
+      // Step 6: Send message with PoW header, read SSE
       const sseResult = await page.evaluate(async (args: {
-        sessionId: string; prompt: string; powResponse: string; thinkingEnabled: boolean;
+        sessionId: string; prompt: string; powResponse: string; thinkingEnabled: boolean; bearerToken: string | null;
       }) => {
         try {
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'x-ds-pow-response': args.powResponse,
+          };
+          if (args.bearerToken) headers['Authorization'] = `Bearer ${args.bearerToken}`;
           const res = await fetch('/api/v0/chat/completion', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-ds-pow-response': args.powResponse,
-            },
+            headers,
             body: JSON.stringify({
               chat_session_id: args.sessionId,
               parent_message_id: null,
@@ -162,6 +206,7 @@ export class DeepSeekProvider extends BaseProvider {
         prompt,
         powResponse,
         thinkingEnabled: isThinking,
+        bearerToken: bearer,
       });
 
       if (sseResult.error) {
@@ -169,14 +214,42 @@ export class DeepSeekProvider extends BaseProvider {
         return;
       }
 
-      // Step 6: Parse SSE
+
+      // Step 7: Parse SSE
+      // DeepSeek Web uses a JSON-patch SSE format:
+      //   {"p":"response/content","o":"APPEND","v":"Hello"} — append to content
+      //   {"v":"!"} — short form append (continues previous path)
+      //   {"p":"response/status","v":"FINISHED"} — status update
+      //   {"p":"response/thinking_content","o":"APPEND","v":"..."} — thinking
       const lines = (sseResult.data ?? '').split('\n');
+      let lastPath = '';
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed) continue;
-        const events = normalizeDeepSeekSSE(trimmed);
-        for (const event of events) {
-          yield event;
+        if (!trimmed || trimmed.startsWith('event:')) continue;
+        if (!trimmed.startsWith('data: ')) continue;
+
+        const raw = trimmed.slice(6);
+        if (raw === '[DONE]' || raw === '{}') continue;
+
+        try {
+          const parsed = JSON.parse(raw);
+
+          // Full response object (initial WIP state) — skip, wait for patches
+          if (parsed?.v?.response) continue;
+
+          const path = parsed.p ?? lastPath;
+          if (parsed.p) lastPath = parsed.p;
+          const value = parsed.v;
+
+          if (path === 'response/content' && typeof value === 'string' && value.length > 0) {
+            yield { type: 'text_delta', delta: value };
+          } else if (path === 'response/thinking_content' && typeof value === 'string' && value.length > 0) {
+            yield { type: 'thinking_delta', delta: value };
+          } else if (path === 'response/status' && (value === 'FINISHED' || value === 'DONE')) {
+            yield { type: 'done', reason: 'stop' };
+          }
+        } catch {
+          // Skip non-JSON lines
         }
       }
 

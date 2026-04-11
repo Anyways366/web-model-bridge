@@ -40,7 +40,7 @@ export function anthropicRoutes(registry: ProviderRegistry): Hono {
     // Resolve provider from model ID
     let resolved;
     try {
-      resolved = registry.resolve(body.model);
+      resolved = await registry.resolve(body.model);
     } catch (err) {
       const res = errorToHttpResponse(err as Error);
       return c.json(res.body, res.status as any);
@@ -113,10 +113,19 @@ export function anthropicRoutes(registry: ProviderRegistry): Hono {
 
     // Non-streaming
     let fullContent = '';
+    let lastError: string | null = null;
     for await (const event of provider.chat({ model, messages, stream: false })) {
       if (event.type === 'text_delta') {
         fullContent += event.delta;
+      } else if (event.type === 'error') {
+        lastError = event.message;
       }
+    }
+    if (fullContent.length === 0 && lastError) {
+      return c.json({
+        type: 'error',
+        error: { type: 'api_error', message: lastError },
+      }, 502 as any);
     }
     return c.json(formatAnthropicNonStream(msgId, body.model, fullContent));
   });

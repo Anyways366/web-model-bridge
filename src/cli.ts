@@ -26,7 +26,7 @@ import { execSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { runDoctor, printDoctorResults, findChromePath } from './doctor.js';
 
-const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, init: RequestInit) => Promise<Response>) => BaseProvider> = {
+const PROVIDER_MAP: Record<string, new (auth: AuthStore, fetch?: (url: string, init: RequestInit) => Promise<Response>, getPage?: (origin: string) => Promise<import('playwright-core').Page>) => BaseProvider> = {
   'claude-web': ClaudeProvider,
   'chatgpt-web': ChatGPTProvider,
   'deepseek-web': DeepSeekProvider,
@@ -254,15 +254,17 @@ program
     const getPage = (origin: string) =>
       browserManager.getPageForOrigin(origin);
 
+    // Providers that need getPage for multi-step browser-context API calls
+    const NEEDS_GET_PAGE = new Set([
+      'claude-web', 'deepseek-web', 'qwen-web', 'doubao-web',
+      'glm-web', 'kimi-web',
+    ]);
+
     const enabled = new Set(config.providers.enabled);
     for (const [id, Ctor] of Object.entries(PROVIDER_MAP)) {
       if (enabled.has(id)) {
-        if (id === 'claude-web') {
-          // Claude needs getPage for multi-step API calls in browser context
-          registry.register(new ClaudeProvider(authStore, browserFetch, getPage));
-        } else if (id === 'deepseek-web') {
-          // DeepSeek needs getPage for PoW challenge + multi-step API calls
-          registry.register(new DeepSeekProvider(authStore, browserFetch, getPage));
+        if (NEEDS_GET_PAGE.has(id)) {
+          registry.register(new Ctor(authStore, browserFetch, getPage));
         } else {
           registry.register(new Ctor(authStore, browserFetch));
         }

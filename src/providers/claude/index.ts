@@ -1,4 +1,4 @@
-import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
+import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebPrompt } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
 import { normalizeClaudeSSE } from './stream.js';
 import { AuthStore } from '../../auth/store.js';
@@ -122,10 +122,7 @@ export class ClaudeProvider extends BaseProvider {
       const conversationId = convResult.conv?.uuid ?? convUuid;
 
       // Step 3: Build prompt from messages
-      const prompt = req.messages
-        .filter(m => m.role === 'user')
-        .map(m => m.content)
-        .join('\n');
+      const prompt = buildWebPrompt(req.messages);
 
       // Step 4: Send message and read SSE response
       const sseResult = await page.evaluate(async (args: {

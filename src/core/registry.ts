@@ -16,21 +16,30 @@ export class ProviderRegistry {
     this.providers.set(provider.info.id, provider);
   }
 
-  resolve(modelId: string): { provider: BaseProvider; model: string } {
+  async resolve(modelId: string): Promise<{ provider: BaseProvider; model: string }> {
     const slashIndex = modelId.indexOf('/');
-    if (slashIndex === -1 || slashIndex === 0 || slashIndex === modelId.length - 1) {
-      throw new InvalidModelError(modelId);
+
+    // Explicit provider/model format
+    if (slashIndex > 0 && slashIndex < modelId.length - 1) {
+      const providerId = modelId.slice(0, slashIndex);
+      const model = modelId.slice(slashIndex + 1);
+
+      const provider = this.providers.get(providerId);
+      if (provider) {
+        return { provider, model };
+      }
+      // provider not found — fall through to fuzzy match
     }
 
-    const providerId = modelId.slice(0, slashIndex);
-    const model = modelId.slice(slashIndex + 1);
-
-    const provider = this.providers.get(providerId);
-    if (!provider) {
-      throw new InvalidModelError(modelId);
+    // Fuzzy match: search all providers for a model with this ID
+    for (const [, provider] of this.providers) {
+      const models = await provider.models();
+      if (models.some((m) => m.id === modelId)) {
+        return { provider, model: modelId };
+      }
     }
 
-    return { provider, model };
+    throw new InvalidModelError(modelId);
   }
 
   async allModels(): Promise<(ModelInfo & { id: string })[]> {

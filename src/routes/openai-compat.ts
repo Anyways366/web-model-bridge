@@ -35,7 +35,7 @@ export function openaiRoutes(registry: ProviderRegistry): Hono {
 
     let resolved;
     try {
-      resolved = registry.resolve(body.model);
+      resolved = await registry.resolve(body.model);
     } catch (err) {
       const res = errorToHttpResponse(err as Error);
       return c.json(res.body, res.status as any);
@@ -80,10 +80,18 @@ export function openaiRoutes(registry: ProviderRegistry): Hono {
 
     // Non-streaming
     let fullContent = '';
+    let lastError: string | null = null;
     for await (const event of provider.chat({ model, messages, stream: false })) {
       if (event.type === 'text_delta') {
         fullContent += event.delta;
+      } else if (event.type === 'error') {
+        lastError = event.message;
       }
+    }
+    if (fullContent.length === 0 && lastError) {
+      return c.json({
+        error: { message: lastError, type: 'provider_error', code: 'provider_error' },
+      }, 502 as any);
     }
     return c.json(formatNonStreamResponse(runId, body.model, fullContent));
   });

@@ -15,7 +15,7 @@ export class Router {
   ) {}
 
   async *chat(modelId: string, req: Omit<ChatRequest, 'model'>): AsyncIterable<StreamEvent> {
-    const { provider, model } = this.registry.resolve(modelId);
+    const { provider, model } = await this.registry.resolve(modelId);
     const providerId = provider.info.id;
 
     // Build attempt list: primary + fallbacks

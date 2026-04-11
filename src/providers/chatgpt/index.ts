@@ -1,4 +1,4 @@
-import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
+import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebPrompt } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
 import { normalizeChatGPTSSE } from './stream.js';
 import { readSSE } from '../_shared/sse-reader.js';
@@ -53,10 +53,10 @@ export class ChatGPTProvider extends BaseProvider {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: req.model,
-          messages: req.messages.map(m => ({
-            author: { role: m.role },
-            content: { content_type: 'text', parts: [m.content] },
-          })),
+          messages: [{
+            author: { role: 'user' },
+            content: { content_type: 'text', parts: [buildWebPrompt(req.messages)] },
+          }],
         }),
       }
     );

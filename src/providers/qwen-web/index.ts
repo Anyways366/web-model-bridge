@@ -1,9 +1,8 @@
-import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest } from '../../core/provider.js';
+import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebPrompt } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
-import { normalizeStandardSSE } from '../_shared/standard-stream.js';
-import { readSSE } from '../_shared/sse-reader.js';
 import { QWEN_WEB_BASE_URL } from './client.js';
 import { AuthStore } from '../../auth/store.js';
+import type { Page } from 'playwright-core';
 
 export class QwenProvider extends BaseProvider {
   readonly info: ProviderInfo = {
@@ -17,6 +16,7 @@ export class QwenProvider extends BaseProvider {
   constructor(
     private authStore: AuthStore,
     private browserFetch?: (url: string, init: RequestInit) => Promise<Response>,
+    private getPage?: (origin: string) => Promise<Page>,
   ) {
     super();
   }
@@ -41,21 +41,144 @@ export class QwenProvider extends BaseProvider {
   }
 
   async *chat(req: ChatRequest): AsyncIterable<StreamEvent> {
-    if (!this.browserFetch) {
+    if (!this.getPage && !this.browserFetch) {
       yield { type: 'error', message: 'Browser not connected' };
       return;
     }
 
-    const response = await this.browserFetch(`${QWEN_WEB_BASE_URL}/api/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: req.model,
-        messages: req.messages,
-        stream: true,
-      }),
-    });
+    try {
+      const page = this.getPage
+        ? await this.getPage(QWEN_WEB_BASE_URL)
+        : null;
 
-    yield* readSSE(response, normalizeStandardSSE);
+      if (!page) {
+        yield { type: 'error', message: 'Qwen requires getPage for multi-step API' };
+        return;
+      }
+
+      // Step 1: Create a new chat
+      const chatResult = await page.evaluate(async () => {
+        try {
+          const res = await fetch('/api/v2/chats/new', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+            credentials: 'include',
+          });
+          if (!res.ok) return { error: `HTTP ${res.status}: ${(await res.text()).substring(0, 200)}` };
+          const data = await res.json();
+          return { chatId: data?.data?.id || data?.id || data?.chat_id };
+        } catch (e: any) {
+          return { error: e.message };
+        }
+      });
+
+      if (chatResult.error || !chatResult.chatId) {
+        yield { type: 'error', message: `Qwen chat create failed: ${chatResult.error || 'no chat id'}` };
+        return;
+      }
+
+      // Step 2: Build message
+      const prompt = buildWebPrompt(req.messages);
+
+      const modelMap: Record<string, string> = {
+        'qwen-3.5-plus': 'qwen3.5-plus',
+        'qwq': 'qwq-plus',
+      };
+      const modelName = modelMap[req.model] || req.model;
+      const fid = crypto.randomUUID();
+
+      // Step 3: Send completion request
+      const sseResult = await page.evaluate(async (args: {
+        chatId: string; prompt: string; model: string; fid: string;
+      }) => {
+        try {
+          const res = await fetch(`/api/v2/chat/completions?chat_id=${args.chatId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify({
+              stream: true,
+              version: '2.1',
+              incremental_output: true,
+              chat_id: args.chatId,
+              chat_mode: 'normal',
+              model: args.model,
+              parent_id: null,
+              messages: [{
+                fid: args.fid,
+                parentId: null,
+                childrenIds: [],
+                role: 'user',
+                content: args.prompt,
+                user_action: 'chat',
+                files: [],
+                timestamp: String(Math.floor(Date.now() / 1000)),
+                models: [args.model],
+                chat_type: 't2t',
+                feature_config: {
+                  thinking_enabled: false,
+                  output_schema: 'phase',
+                },
+              }],
+            }),
+            credentials: 'include',
+          });
+
+          if (!res.ok) {
+            const text = await res.text();
+            return { error: `HTTP ${res.status}: ${text.substring(0, 200)}` };
+          }
+
+          const reader = res.body?.getReader();
+          if (!reader) return { error: 'No response body' };
+          const decoder = new TextDecoder();
+          let fullText = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            fullText += decoder.decode(value, { stream: true });
+          }
+          return { data: fullText };
+        } catch (e: any) {
+          return { error: e.message };
+        }
+      }, {
+        chatId: chatResult.chatId,
+        prompt,
+        model: modelName,
+        fid,
+      });
+
+      if (sseResult.error) {
+        yield { type: 'error', message: `Qwen API error: ${sseResult.error}` };
+        return;
+      }
+
+      // Step 4: Parse SSE — Qwen uses standard format but may have custom fields
+      const lines = (sseResult.data ?? '').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          const choice = parsed.choices?.[0];
+          if (choice?.finish_reason) {
+            yield { type: 'done', reason: choice.finish_reason === 'length' ? 'length' : 'stop' };
+          } else if (choice?.delta?.content) {
+            yield { type: 'text_delta', delta: choice.delta.content };
+          }
+        } catch {
+          // Non-JSON SSE line, skip
+        }
+      }
+    } catch (err) {
+      yield { type: 'error', message: `Qwen provider error: ${(err as Error).message}` };
+    }
   }
 }

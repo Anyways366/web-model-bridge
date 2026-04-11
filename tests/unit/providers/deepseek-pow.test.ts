@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { solvePowSha256, buildPowResponse, type DeepSeekPowChallenge } from '../../../src/providers/deepseek/pow.js';
+import { solvePowSha256, solvePow, buildPowResponse, type DeepSeekPowChallenge } from '../../../src/providers/deepseek/pow.js';
 
 describe('DeepSeek PoW Solver', () => {
   it('solves SHA256 challenge with low difficulty', () => {
@@ -51,7 +51,7 @@ describe('DeepSeek PoW Solver', () => {
     expect(typeof nonce).toBe('number');
   });
 
-  it('throws on unsupported algorithm', () => {
+  it('throws on unsupported algorithm', async () => {
     const challenge: DeepSeekPowChallenge = {
       algorithm: 'DeepSeekHashV1',
       challenge: 'test',
@@ -59,7 +59,7 @@ describe('DeepSeek PoW Solver', () => {
       salt: 'salt',
       signature: 'sig',
     };
-    expect(() => solvePowSha256(challenge)).toThrow('Unsupported PoW algorithm');
+    await expect(solvePow(challenge)).rejects.toThrow('DeepSeekHashV1 failed');
   });
 
   it('buildPowResponse creates valid base64 JSON', () => {
