@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatStreamChunk,
+  formatUsageChunk,
   formatDoneChunk,
   formatNonStreamResponse,
   formatModelsResponse,
+  createToolCallStreamState,
 } from '../../../src/core/openai-formatter.js';
 import type { StreamEvent } from '../../../src/core/stream.js';
 import type { ModelInfo } from '../../../src/core/provider.js';
@@ -54,11 +56,117 @@ describe('OpenAI Formatter', () => {
       const chunk = formatStreamChunk('run-1', modelId, event, false);
       expect(chunk.choices[0].finish_reason).toBe('tool_calls');
     });
+
+    describe('tool_call streaming', () => {
+      it('first event for a call carries id, name, type and arguments, plus role on the first chunk', () => {
+        const state = createToolCallStreamState();
+        const event: StreamEvent = {
+          type: 'tool_call', index: 0, id: 'call_1', name: 'get_weather', args: '{"city":',
+        };
+        const chunk = formatStreamChunk('run-1', modelId, event, true, state);
+        expect(chunk.choices[0].delta.role).toBe('assistant');
+        expect(chunk.choices[0].delta.tool_calls).toEqual([{
+          index: 0,
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'get_weather', arguments: '{"city":' },
+        }]);
+      });
+
+      it('subsequent events emit only the argument delta and never repeat id/name/type', () => {
+        const state = createToolCallStreamState();
+        const first: StreamEvent = {
+          type: 'tool_call', index: 0, id: 'call_1', name: 'get_weather', args: '{"city":',
+        };
+        const second: StreamEvent = {
+          type: 'tool_call', index: 0, id: 'call_1', name: 'get_weather', args: '{"city":"Beijing"}',
+        };
+        formatStreamChunk('run-1', modelId, first, true, state);
+        const chunk = formatStreamChunk('run-1', modelId, second, false, state);
+        expect(chunk.choices[0].delta.tool_calls).toEqual([{
+          index: 0,
+          function: { arguments: '"Beijing"}' },
+        }]);
+        expect(chunk.choices[0].delta.tool_calls[0]).not.toHaveProperty('id');
+        expect(chunk.choices[0].delta.tool_calls[0]).not.toHaveProperty('name');
+        expect(chunk.choices[0].delta.tool_calls[0]).not.toHaveProperty('type');
+      });
+
+      it('keeps concurrent tool calls on separate indexes', () => {
+        const state = createToolCallStreamState();
+        const callAFrag1: StreamEvent = {
+          type: 'tool_call', index: 0, id: 'call_a', name: 'fn_a', args: '{"a":1',
+        };
+        const callB: StreamEvent = {
+          type: 'tool_call', index: 1, id: 'call_b', name: 'fn_b', args: '{"b":2',
+        };
+        const callAFrag2: StreamEvent = {
+          type: 'tool_call', index: 0, id: 'call_a', name: 'fn_a', args: '{"a":1}',
+        };
+
+        formatStreamChunk('run-1', modelId, callAFrag1, true, state);
+        const chunkB = formatStreamChunk('run-1', modelId, callB, false, state);
+        expect(chunkB.choices[0].delta.tool_calls).toEqual([{
+          index: 1,
+          id: 'call_b',
+          type: 'function',
+          function: { name: 'fn_b', arguments: '{"b":2' },
+        }]);
+
+        const chunkA2 = formatStreamChunk('run-1', modelId, callAFrag2, false, state);
+        expect(chunkA2.choices[0].delta.tool_calls).toEqual([{
+          index: 0,
+          function: { arguments: '}' },
+        }]);
+      });
+
+      it('a single full-arguments event streams as one chunk with complete arguments', () => {
+        const state = createToolCallStreamState();
+        const event: StreamEvent = {
+          type: 'tool_call', index: 0, id: 'call_1', name: 'fn', args: '{"city":"Beijing"}',
+        };
+        const chunk = formatStreamChunk('run-1', modelId, event, false, state);
+        expect(chunk.choices[0].delta.tool_calls).toEqual([{
+          index: 0,
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'fn', arguments: '{"city":"Beijing"}' },
+        }]);
+      });
+
+      it('does not crash on a tool_call with non-string args (malformed provider)', () => {
+        const state = createToolCallStreamState();
+        const chunk = formatStreamChunk('run-1', modelId, {
+          type: 'tool_call', index: 0, id: 'call_a', name: 'fn_a', args: undefined as unknown as string,
+        }, false, state);
+        expect(chunk.choices[0].delta.tool_calls).toEqual([{
+          index: 0,
+          id: 'call_a',
+          type: 'function',
+          function: { name: 'fn_a', arguments: '' },
+        }]);
+      });
+    });
   });
 
   describe('formatDoneChunk', () => {
     it('returns [DONE] string', () => {
       expect(formatDoneChunk()).toBe('[DONE]');
+    });
+  });
+
+  describe('formatUsageChunk', () => {
+    it('formats a usage chunk with empty choices', () => {
+      const chunk = formatUsageChunk('run-1', modelId, {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+      });
+      expect(chunk.id).toBe('run-1');
+      expect(chunk.object).toBe('chat.completion.chunk');
+      expect(chunk.model).toBe(modelId);
+      expect(chunk.choices).toEqual([]);
+      expect(chunk.usage).toEqual({ prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
     });
   });
 
@@ -71,6 +179,32 @@ describe('OpenAI Formatter', () => {
       expect(res.choices[0].message.role).toBe('assistant');
       expect(res.choices[0].message.content).toBe('Hello world');
       expect(res.choices[0].finish_reason).toBe('stop');
+    });
+
+    it('includes tool_calls and finish_reason tool_calls when tool calls are present', () => {
+      const res = formatNonStreamResponse('run-1', modelId, '', undefined, [
+        { id: 'call_1', type: 'function', function: { name: 'fn_a', arguments: '{"a":1}' } },
+        { id: 'call_2', type: 'function', function: { name: 'fn_b', arguments: '{"b":2}' } },
+      ]);
+      expect(res.choices[0].message.tool_calls).toEqual([
+        { id: 'call_1', type: 'function', function: { name: 'fn_a', arguments: '{"a":1}' } },
+        { id: 'call_2', type: 'function', function: { name: 'fn_b', arguments: '{"b":2}' } },
+      ]);
+      expect(res.choices[0].finish_reason).toBe('tool_calls');
+    });
+
+    it('defaults usage to zeros when not provided', () => {
+      const res = formatNonStreamResponse('run-1', modelId, 'Hello');
+      expect(res.usage).toEqual({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
+    });
+
+    it('preserves usage when provided', () => {
+      const res = formatNonStreamResponse('run-1', modelId, 'Hello', {
+        prompt_tokens: 3,
+        completion_tokens: 2,
+        total_tokens: 5,
+      });
+      expect(res.usage).toEqual({ prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
     });
   });
 

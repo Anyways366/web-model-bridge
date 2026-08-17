@@ -6,6 +6,56 @@ import type { Page } from 'playwright-core';
 
 const DOUBAO_QUERY_PARAMS = 'aid=497858&device_platform=web&language=zh&pkg_type=release_version&real_aid=497858&region=CN&samantha_web=1&sys_region=CN&use_olympus_account=1&version_code=20800';
 
+/**
+ * Build the Doubao completion request body. Doubao maintains conversations
+ * server-side: a brand-new exchange uses `conversation_id: '0'` with
+ * `need_create_conversation: true`; continuing an existing conversation (as
+ * returned in the previous turn's 2002 metadata event and echoed back to the
+ * caller as the conversation id) reuses that id and skips creation. This is
+ * the protocol's own semantics — no invented state.
+ */
+export function buildDoubaoCompletionBody(
+  prompt: string,
+  conversationId?: string,
+): {
+  messages: Array<{ content: string; content_type: number; attachments: unknown[]; references: unknown[] }>;
+  completion_option: {
+    is_regen: boolean;
+    with_suggest: boolean;
+    need_create_conversation: boolean;
+    launch_stage: number;
+    is_replace: boolean;
+    is_delete: boolean;
+    message_from: number;
+    event_id: string;
+  };
+  conversation_id: string;
+  local_conversation_id: string;
+  local_message_id: string;
+} {
+  return {
+    messages: [{
+      content: JSON.stringify({ text: prompt }),
+      content_type: 2001,
+      attachments: [],
+      references: [],
+    }],
+    completion_option: {
+      is_regen: false,
+      with_suggest: false,
+      need_create_conversation: !conversationId,
+      launch_stage: 1,
+      is_replace: false,
+      is_delete: false,
+      message_from: 0,
+      event_id: '0',
+    },
+    conversation_id: conversationId ?? '0',
+    local_conversation_id: `local_16${Date.now()}`,
+    local_message_id: crypto.randomUUID(),
+  };
+}
+
 export class DoubaoProvider extends BaseProvider {
   readonly info: ProviderInfo = {
     id: 'doubao-web',
@@ -60,12 +110,9 @@ export class DoubaoProvider extends BaseProvider {
       const prompt = buildWebPrompt(req.messages);
 
       const sseResult = await page.evaluate(async (args: {
-        queryParams: string; prompt: string;
+        queryParams: string; body: unknown;
       }) => {
         try {
-          const localConvId = `local_16${Date.now()}`;
-          const localMsgId = crypto.randomUUID();
-
           const res = await fetch(`/samantha/chat/completion?${args.queryParams}`, {
             method: 'POST',
             headers: {
@@ -73,27 +120,7 @@ export class DoubaoProvider extends BaseProvider {
               'Accept': 'text/event-stream',
               'Agw-js-conv': 'str',
             },
-            body: JSON.stringify({
-              messages: [{
-                content: JSON.stringify({ text: args.prompt }),
-                content_type: 2001,
-                attachments: [],
-                references: [],
-              }],
-              completion_option: {
-                is_regen: false,
-                with_suggest: false,
-                need_create_conversation: true,
-                launch_stage: 1,
-                is_replace: false,
-                is_delete: false,
-                message_from: 0,
-                event_id: '0',
-              },
-              conversation_id: '0',
-              local_conversation_id: localConvId,
-              local_message_id: localMsgId,
-            }),
+            body: JSON.stringify(args.body),
             credentials: 'include',
           });
 
@@ -117,7 +144,7 @@ export class DoubaoProvider extends BaseProvider {
         }
       }, {
         queryParams: DOUBAO_QUERY_PARAMS,
-        prompt,
+        body: buildDoubaoCompletionBody(prompt, req.conversationId),
       });
 
       if (sseResult.error) {
@@ -127,7 +154,8 @@ export class DoubaoProvider extends BaseProvider {
 
       // Parse Doubao SSE response
       // Doubao event_data is a nested JSON string, event_type indicates the type:
-      // 2001 = text content, 2002 = metadata, etc.
+      // 2001 = text content, 2002 = metadata, 2006 = done, etc.
+      let serverConversationId: string | undefined;
       const lines = (sseResult.data ?? '').split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
@@ -160,9 +188,26 @@ export class DoubaoProvider extends BaseProvider {
                   yield { type: 'text_delta', delta: text };
                 }
               }
+            } else if (eventType === 2002 || eventType === '2002') {
+              // Metadata event — carries the server-side conversation id used
+              // for continuing this conversation on the next turn.
+              let eventData = parsed.event_data;
+              if (typeof eventData === 'string') {
+                try { eventData = JSON.parse(eventData); } catch {}
+              }
+              if (eventData && typeof eventData === 'object') {
+                const convId = (eventData as any).conversation_id ?? (eventData as any).local_conversation_id;
+                if (typeof convId === 'string' && convId && convId !== '0') {
+                  serverConversationId = convId;
+                }
+              }
             } else if (eventType === 2006 || eventType === '2006') {
               // Done event
-              yield { type: 'done', reason: 'stop' };
+              if (serverConversationId) {
+                yield { type: 'done', reason: 'stop', conversationId: serverConversationId };
+              } else {
+                yield { type: 'done', reason: 'stop' };
+              }
             }
           } catch {
             // Skip non-JSON data lines

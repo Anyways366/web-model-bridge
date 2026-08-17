@@ -68,12 +68,12 @@ server:
 
   it('resolves profileDir relative to stateDir', () => {
     const config = loadConfig({ stateDir: '/custom/dir' });
-    expect(config.browser.profileDir).toBe('/custom/dir/chrome-profile');
+    expect(config.browser.profileDir).toBe(join('/custom/dir', 'chrome-profile'));
   });
 
   it('resolves log file relative to stateDir', () => {
     const config = loadConfig({ stateDir: '/custom/dir' });
-    expect(config.logging.file).toBe('/custom/dir/logs/bridge.log');
+    expect(config.logging.file).toBe(join('/custom/dir', 'logs', 'bridge.log'));
   });
 
   it('providers.enabled defaults to all providers', () => {

@@ -3,6 +3,7 @@ import { openaiRoutes } from './routes/openai-compat.js';
 import { anthropicRoutes } from './routes/anthropic-compat.js';
 import { managementRoutes, type ManagementDeps } from './routes/management.js';
 import { ProviderRegistry } from './core/registry.js';
+import { Router } from './core/router.js';
 import { AuthStore } from './auth/store.js';
 import type { BrowserStatus, LoginState } from './browser/manager.js';
 import { InvalidTokenError, errorToHttpResponse } from './core/errors.js';
@@ -16,6 +17,7 @@ export interface AppOptions {
   registry: ProviderRegistry;
   authStore: AuthStore;
   authToken: string | null;
+  router?: Router;
   onLogin?: (providerId: string) => Promise<{ status: string; message: string }>;
   getBrowserStatus?: () => BrowserStatus;
   getLoginState?: () => LoginState;
@@ -65,8 +67,8 @@ export function createApp(opts: AppOptions): Hono {
   });
 
   // Mount API routes
-  app.route('/', openaiRoutes(opts.registry));
-  app.route('/', anthropicRoutes(opts.registry));
+  app.route('/', openaiRoutes(opts.registry, opts.router));
+  app.route('/', anthropicRoutes(opts.registry, opts.router));
 
   const mgmtDeps: ManagementDeps = {
     registry: opts.registry,

@@ -45,3 +45,29 @@ export class MockProvider extends BaseProvider {
     yield { type: 'done', reason: 'stop' };
   }
 }
+
+/**
+ * Records the exact ChatRequest it receives so tests can assert what the
+ * route handed to the provider, and replays a scripted event sequence.
+ */
+export class CapturingProvider extends MockProvider {
+  lastRequest: ChatRequest | null = null;
+  script: StreamEvent[];
+
+  constructor(id: string, script: StreamEvent[] = []) {
+    super(id);
+    this.script = script;
+  }
+
+  async *chat(req: ChatRequest): AsyncIterable<StreamEvent> {
+    this.lastRequest = req;
+    if (this.script.length === 0) {
+      yield { type: 'text_delta', delta: 'reply' };
+      yield { type: 'done', reason: 'stop' };
+      return;
+    }
+    for (const event of this.script) {
+      yield event;
+    }
+  }
+}

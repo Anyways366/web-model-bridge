@@ -65,7 +65,7 @@ export class TimeoutError extends BridgeError {
   }
 }
 
-interface ErrorResponse {
+export interface ErrorResponse {
   status: number;
   body: {
     error: {
@@ -77,39 +77,53 @@ interface ErrorResponse {
   };
 }
 
+/**
+ * Single source of truth for error code → HTTP status / error type mapping.
+ * Used both when converting thrown errors and when converting StreamEvent
+ * error events produced by the Router.
+ */
+const ERROR_CODE_INFO: Record<string, { status: number; type: string }> = {
+  auth_required: { status: 401, type: 'authentication_error' },
+  auth_expired: { status: 401, type: 'authentication_error' },
+  invalid_model: { status: 400, type: 'invalid_request_error' },
+  invalid_body: { status: 400, type: 'invalid_request_error' },
+  invalid_token: { status: 403, type: 'permission_error' },
+  provider_disabled: { status: 404, type: 'not_found_error' },
+  browser_unavailable: { status: 503, type: 'server_error' },
+  upstream_rate_limit: { status: 429, type: 'rate_limit_error' },
+  upstream_blocked: { status: 502, type: 'server_error' },
+  timeout: { status: 504, type: 'server_error' },
+  internal_error: { status: 500, type: 'server_error' },
+};
+
+export function errorEventToResponse(code: string | undefined, message: string): ErrorResponse {
+  const info = code ? ERROR_CODE_INFO[code] : undefined;
+  const resolvedCode = code && info ? code : 'internal_error';
+  return {
+    status: info?.status ?? 500,
+    body: {
+      error: {
+        message,
+        type: info?.type ?? 'server_error',
+        code: resolvedCode,
+        param: null,
+      },
+    },
+  };
+}
+
 export function errorToHttpResponse(err: Error): ErrorResponse {
-  const base = { param: null as null, message: err.message };
-
-  if (err instanceof AuthRequiredError) {
-    return { status: 401, body: { error: { ...base, type: 'authentication_error', code: 'auth_required' } } };
-  }
-  if (err instanceof AuthExpiredError) {
-    return { status: 401, body: { error: { ...base, type: 'authentication_error', code: 'auth_expired' } } };
-  }
-  if (err instanceof InvalidModelError) {
-    return { status: 400, body: { error: { ...base, type: 'invalid_request_error', code: 'invalid_model' } } };
-  }
-  if (err instanceof ProviderDisabledError) {
-    return { status: 404, body: { error: { ...base, type: 'not_found_error', code: 'provider_disabled' } } };
-  }
-  if (err instanceof InvalidBodyError) {
-    return { status: 400, body: { error: { ...base, type: 'invalid_request_error', code: 'invalid_body' } } };
-  }
-  if (err instanceof InvalidTokenError) {
-    return { status: 403, body: { error: { ...base, type: 'permission_error', code: 'invalid_token' } } };
-  }
-  if (err instanceof BrowserUnavailableError) {
-    return { status: 503, body: { error: { ...base, type: 'server_error', code: 'browser_unavailable' } } };
-  }
-  if (err instanceof UpstreamRateLimitError) {
-    return { status: 429, body: { error: { ...base, type: 'rate_limit_error', code: 'upstream_rate_limit' } } };
-  }
-  if (err instanceof UpstreamBlockedError) {
-    return { status: 502, body: { error: { ...base, type: 'server_error', code: 'upstream_blocked' } } };
-  }
-  if (err instanceof TimeoutError) {
-    return { status: 504, body: { error: { ...base, type: 'server_error', code: 'timeout' } } };
-  }
-
-  return { status: 500, body: { error: { ...base, type: 'server_error', code: 'internal_error' } } };
+  const code =
+    err instanceof AuthRequiredError ? 'auth_required'
+      : err instanceof AuthExpiredError ? 'auth_expired'
+      : err instanceof InvalidModelError ? 'invalid_model'
+      : err instanceof InvalidBodyError ? 'invalid_body'
+      : err instanceof InvalidTokenError ? 'invalid_token'
+      : err instanceof ProviderDisabledError ? 'provider_disabled'
+      : err instanceof BrowserUnavailableError ? 'browser_unavailable'
+      : err instanceof UpstreamRateLimitError ? 'upstream_rate_limit'
+      : err instanceof UpstreamBlockedError ? 'upstream_blocked'
+      : err instanceof TimeoutError ? 'timeout'
+      : 'internal_error';
+  return errorEventToResponse(code, err.message);
 }

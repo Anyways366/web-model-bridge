@@ -1,6 +1,6 @@
-import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebPrompt } from '../../core/provider.js';
+import { BaseProvider, type ProviderInfo, type ModelInfo, type ChatRequest, buildWebMessages, buildWebPrompt } from '../../core/provider.js';
 import type { StreamEvent } from '../../core/stream.js';
-import { normalizeChatGPTSSE } from './stream.js';
+import { createChatGPTSSENormalizer } from './stream.js';
 import { readSSE } from '../_shared/sse-reader.js';
 import { CHATGPT_WEB_BASE_URL } from './client.js';
 import { AuthStore } from '../../auth/store.js';
@@ -46,21 +46,31 @@ export class ChatGPTProvider extends BaseProvider {
       return;
     }
 
-    const response = await this.browserFetch(
-      `${CHATGPT_WEB_BASE_URL}/backend-api/conversation`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+    // Tool-aware requests forward the structured history (assistant
+    // tool_calls, tool results) and the tool definitions upstream. Plain
+    // chats keep today's single-user-message payload.
+    const hasTools = Array.isArray(req.tools) && req.tools.length > 0;
+    const payload = hasTools ? buildWebMessages(req.messages, req.tools) : null;
+
+    const body = payload
+      ? { model: req.model, messages: payload.messages, tools: payload.tools }
+      : {
           model: req.model,
           messages: [{
             author: { role: 'user' },
             content: { content_type: 'text', parts: [buildWebPrompt(req.messages)] },
           }],
-        }),
+        };
+
+    const response = await this.browserFetch(
+      `${CHATGPT_WEB_BASE_URL}/backend-api/conversation`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       }
     );
 
-    yield* readSSE(response, normalizeChatGPTSSE);
+    yield* readSSE(response, createChatGPTSSENormalizer());
   }
 }

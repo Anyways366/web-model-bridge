@@ -11,6 +11,7 @@ import {
   UpstreamBlockedError,
   TimeoutError,
   errorToHttpResponse,
+  errorEventToResponse,
 } from '../../../src/core/errors.js';
 
 describe('Error classes', () => {
@@ -106,5 +107,34 @@ describe('Error classes', () => {
     expect(res.body.error).toHaveProperty('type');
     expect(res.body.error).toHaveProperty('code');
     expect(res.body.error).toHaveProperty('param', null);
+  });
+});
+
+describe('errorEventToResponse', () => {
+  it('maps known codes to status + type', () => {
+    expect(errorEventToResponse('auth_required', 'x').status).toBe(401);
+    expect(errorEventToResponse('auth_required', 'x').body.error.type).toBe('authentication_error');
+    expect(errorEventToResponse('timeout', 'x').status).toBe(504);
+    expect(errorEventToResponse('upstream_rate_limit', 'x').status).toBe(429);
+    expect(errorEventToResponse('upstream_rate_limit', 'x').body.error.type).toBe('rate_limit_error');
+    expect(errorEventToResponse('invalid_model', 'x').status).toBe(400);
+    expect(errorEventToResponse('upstream_blocked', 'x').status).toBe(502);
+  });
+
+  it('preserves message and code', () => {
+    const res = errorEventToResponse('timeout', 'Request timed out');
+    expect(res.body.error.message).toBe('Request timed out');
+    expect(res.body.error.code).toBe('timeout');
+  });
+
+  it('maps unknown or missing codes to 500 internal_error', () => {
+    expect(errorEventToResponse(undefined, 'boom')).toMatchObject({
+      status: 500,
+      body: { error: { code: 'internal_error', type: 'server_error', message: 'boom' } },
+    });
+    expect(errorEventToResponse('not-a-real-code', 'boom')).toMatchObject({
+      status: 500,
+      body: { error: { code: 'internal_error' } },
+    });
   });
 });

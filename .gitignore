@@ -6,3 +6,13 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# scratch/debug tooling (live browser session capture)
+phase7-*.ts
+
+# credential-like artifacts
+*.har
+*.pem
+*.key
+*.p12
+*.pfx

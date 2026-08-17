@@ -1,5 +1,6 @@
 import { createApp } from '../../src/server.js';
 import { ProviderRegistry } from '../../src/core/registry.js';
+import { Router } from '../../src/core/router.js';
 import { AuthStore } from '../../src/auth/store.js';
 import { MockProvider } from './mock-provider.js';
 import { mkdirSync, rmSync } from 'node:fs';
@@ -17,6 +18,7 @@ export interface TestContext {
 export function createTestContext(opts?: {
   authToken?: string;
   providers?: MockProvider[];
+  router?: Router | ((registry: ProviderRegistry) => Router);
 }): TestContext {
   const stateDir = join(tmpdir(), `wmb-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(stateDir, { recursive: true });
@@ -35,7 +37,8 @@ export function createTestContext(opts?: {
     registry.register(p);
   }
 
-  const app = createApp({ registry, authStore, authToken: opts?.authToken ?? null });
+  const router = typeof opts?.router === 'function' ? opts.router(registry) : opts?.router;
+  const app = createApp({ registry, authStore, authToken: opts?.authToken ?? null, router });
 
   return {
     app,
