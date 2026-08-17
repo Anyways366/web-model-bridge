@@ -16,3 +16,6 @@ phase7-*.ts
 *.key
 *.p12
 *.pfx
+
+# archives
+*.zip
