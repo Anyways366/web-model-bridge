@@ -54,9 +54,17 @@ logging:
 server:
   port: 8080
 `);
-    const config = loadConfig({ stateDir: testDir, port: 9999, host: '0.0.0.0' });
+    const config = loadConfig({ stateDir: testDir, port: 9999, host: '192.168.1.5' });
     expect(config.server.port).toBe(9999);
-    expect(config.server.host).toBe('0.0.0.0');
+    expect(config.server.host).toBe('192.168.1.5');
+  });
+
+  it('refuses wildcard bind hosts fail-closed', () => {
+    expect(() => loadConfig({ stateDir: testDir, host: '0.0.0.0' })).toThrow(/wildcard host/);
+    expect(() => loadConfig({ stateDir: testDir, host: '::' })).toThrow(/wildcard host/);
+    const configPath = join(testDir, 'config.yml');
+    writeFileSync(configPath, 'server:\n  host: 0.0.0.0\n');
+    expect(() => loadConfig({ stateDir: testDir })).toThrow(/wildcard host/);
   });
 
   it('handles invalid YAML gracefully', () => {

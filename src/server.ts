@@ -42,6 +42,9 @@ export function createApp(opts: AppOptions): Hono {
     app.use('/webmodel/*', checkToken);
   }
 
+  // Health check
+  app.get('/health', (c) => c.json({ status: 'ok', uptime: Math.floor(process.uptime()) }));
+
   // Dashboard
   app.get('/', (c) => {
     try {

@@ -22,5 +22,6 @@ export default defineConfig({
         // Dashboard files may not exist yet
       }
     }
+    copyFileSync(join('src', 'providers', 'deepseek', 'deepseek-hash-v1.wasm.b64'), join('dist', 'deepseek-hash-v1.wasm.b64'));
   },
 });

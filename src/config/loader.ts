@@ -103,6 +103,8 @@ export function loadConfig(opts: LoadOptions): BridgeConfig {
   if (opts.authToken !== undefined) config.server.authToken = opts.authToken;
   if (opts.verbose) config.logging.level = 'debug';
 
+  assertSafeBindHost(config.server.host);
+
   // Environment variable overrides (Docker-friendly)
   if (process.env.WMB_PORT) config.server.port = parseInt(process.env.WMB_PORT, 10);
   if (process.env.WMB_HOST) config.server.host = process.env.WMB_HOST;
@@ -114,6 +116,15 @@ export function loadConfig(opts: LoadOptions): BridgeConfig {
   }
 
   return config;
+}
+
+/** Refuse wildcard binds — the bridge must never be exposed beyond localhost. */
+function assertSafeBindHost(host: string): void {
+  if (['0.0.0.0', '::', '[::]', '::ffff:0.0.0.0'].includes(host.trim().toLowerCase())) {
+    throw new Error(
+      `Refusing to bind to wildcard host '${host}'. web-model-bridge must not be exposed publicly; use 127.0.0.1.`,
+    );
+  }
 }
 
 function mergeDeep(target: Record<string, unknown>, source: Record<string, unknown>): void {

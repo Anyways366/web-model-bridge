@@ -1,6 +1,8 @@
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { findChromePath } from '../doctor.js';
 import { platform } from 'node:os';
+import { assertAllowedUrl } from '../core/network-policy.js';
+import { gateNavigationToAllowedHosts } from './navigation-gate.js';
 
 export type BrowserStatus = 'running' | 'idle' | 'stopped';
 export type BrowserMode = 'attach' | 'launch';
@@ -19,7 +21,9 @@ export interface BrowserManagerOptions {
   idleShutdown: number;
   loginTimeout: number;
   cdpUrl?: string;        // e.g. "http://127.0.0.1:9222"
-  mode?: BrowserMode;     // "attach" (default) | "launch"
+  mode?: BrowserMode;     // "attach" (default) or "launch"
+  /** Fail-closed outbound allowlist (hostnames). Empty = unrestricted (tests/dev). */
+  allowedHosts?: string[];
 }
 
 export class BrowserManager {
@@ -102,6 +106,7 @@ export class BrowserManager {
    */
   async getPageForOrigin(origin: string): Promise<Page> {
     const ctx = await this.ensureBrowser();
+    if (this.opts.allowedHosts?.length) assertAllowedUrl(origin, this.opts.allowedHosts);
 
     let page = this.domainPages.get(origin);
     if (page && page.isClosed()) {
@@ -111,6 +116,7 @@ export class BrowserManager {
 
     if (!page) {
       page = await ctx.newPage();
+      if (this.opts.allowedHosts?.length) gateNavigationToAllowedHosts(page, this.opts.allowedHosts);
       try {
         await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15000 });
       } catch {
@@ -140,6 +146,7 @@ export class BrowserManager {
    */
   async fetchInBrowser(url: string, init: RequestInit): Promise<Response> {
     const targetOrigin = new URL(url).origin;
+    if (this.opts.allowedHosts?.length) assertAllowedUrl(targetOrigin, this.opts.allowedHosts);
     const page = await this.getPageForOrigin(targetOrigin);
 
     const result = await page.evaluate(
@@ -179,6 +186,7 @@ export class BrowserManager {
       try {
         const ctx = await this.ensureBrowser();
         const page = await ctx.newPage();
+        if (this.opts.allowedHosts?.length) gateNavigationToAllowedHosts(page, this.opts.allowedHosts);
 
         this._loginState = {
           providerId,
@@ -187,6 +195,7 @@ export class BrowserManager {
           startedAt: Date.now(),
         };
 
+        if (this.opts.allowedHosts?.length) assertAllowedUrl(loginUrl, this.opts.allowedHosts);
         await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: this.opts.startupTimeout });
 
         // Wait for user to close the tab
@@ -264,6 +273,7 @@ export class BrowserManager {
       });
 
       const page: Page = await headedContext.newPage();
+      if (this.opts.allowedHosts?.length) gateNavigationToAllowedHosts(page, this.opts.allowedHosts);
 
       this._loginState = {
         providerId,
@@ -272,6 +282,7 @@ export class BrowserManager {
         startedAt: Date.now(),
       };
 
+      if (this.opts.allowedHosts?.length) assertAllowedUrl(loginUrl, this.opts.allowedHosts);
       await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
 
       const waitForCompletion = async () => {
