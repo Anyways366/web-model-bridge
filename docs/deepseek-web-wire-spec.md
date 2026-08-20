@@ -14,13 +14,18 @@ Evidence tiers for every field:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `https://chat.deepseek.com/api/v0/chat/completion` | POST | All chat traffic (normal + file-assisted) [OBSERVED] |
-| `https://chat.deepseek.com/api/v0/chat/collapse_message` | GET | Session left panel collapse [REF-DERIVED] |
+| `https://chat.deepseek.com/api/v0/chat_session/create` | POST | Create a chat session; empty body `{}` → `data.biz_data.id` [OBSERVED 2026-08-20] |
+| `https://chat.deepseek.com/api/v0/chat/create_pow_challenge` | POST | Fetch a PoW challenge; body `{"target_path":"/api/v0/chat/completion"}` → `data.biz_data.challenge` [OBSERVED 2026-08-20] |
+| `https://chat.deepseek.com/api/v0/chat_session/fetch_page` | GET | Session list payload [OBSERVED 2026-08-20, unused] |
+| `https://chat.deepseek.com/api/v0/users/current` | GET | Account info (`id`, `token`) [OBSERVED 2026-08-20, unused] |
+| `https://chat.deepseek.com/api/v0/client/settings` | GET | Client feature flags (`model_configs`, `chat_hcaptcha`, …) [OBSERVED 2026-08-20, unused] |
+| `https://chat.deepseek.com/api/v0/chat/collapse_message` | GET | Session left panel collapse [REF-DERIVED, unused by us] |
 | `https://chat.deepseek.com/api/v0/chat/delete_session` | GET | Delete a session [OBSERVED, unused by us] |
 | `https://chat.deepseek.com/api/v0/chat/edit_message` | GET | Edit a message / conversation (token/message-count corrections) [REF-DERIVED, unused by us] |
 | `https://chat.deepseek.com/api/v0/chat/message_feedback` | GET | Feedback endpoint [REF-DERIVED, unused by us] |
 | `https://chat.deepseek.com/api/v0/chat/recreate_session` | GET | [?] [REF-DERIVED, unused] |
-| `https://chat.deepseek.com/api/v0/chat/session/history` | GET | Multi-message history payload for a session [REF-DERIVED, unused] |
-| `https://chat.deepseek.com/api/v0/chat/session/list` | GET | Session list payload [REF-DERIVED, unused] |
+| `https://chat.deepseek.com/api/v0/chat/session/history` | GET | Multi-message history payload for a session [REF-DERIVED, unused — NOT observed live; old FE paths may 404] |
+| `https://chat.deepseek.com/api/v0/chat/session/list` | GET | Session list payload [REF-DERIVED, unused — NOT observed live; real list endpoint is chat_session/fetch_page] |
 | `https://chat.deepseek.com/api/v0/chat/session/set_last_session` | GET | [?] [REF-DERIVED, unused] |
 | `https://chat.deepseek.com/api/v0/login/login` | POST | Login flow [REF-DERIVED, unused by us — we proxy page credentials] |
 | `https://chat.deepseek.com/api/v0/login/logout` | GET | Logout [REF-DERIVED, unused] |
@@ -29,19 +34,23 @@ Evidence tiers for every field:
 | `https://chat.deepseek.com/api/v0/test_model/post_test_model` | POST | [?] [INFERRED, unused] |
 | `https://chat.deepseek.com/api/v0/chat/stop_stream` | GET | Abort an ongoing response; requires route: `chunk_id=chat_agent&last_messaged_id={response_message_id}` [OBSERVED — our provider has no abort-triggered teardown; see §14] |
 
-PoW challenge endpoint: challenge is delivered as the FIRST SSE event; the PoW response travels on the
-`x-ds-pow-response` request header of the completion POST itself [OBSERVED].
+PoW challenge endpoint: challenge is fetched from `/api/v0/chat/create_pow_challenge`; the PoW
+response travels on the `x-ds-pow-response` request header of the completion POST itself
+[OBSERVED 2026-08-20].
 
 ### Session lifecycle (what we actually use)
 
 ```
-PREFLIGHT (per request, from finalizeConfig/authorization interceptor):
-  GET  /api/v0/chat/create_session           -> { biz_code, status, data: { id, chat_session_id }, ... }
-  POST /api/v0/chat/prompt                    -> { prompt, id: prompt_id }
-           body: { "content": "v1", "mode": "advanced" }            [REF-DERIVED]
+PREFLIGHT (per request):
+  POST /api/v0/chat_session/create            -> { code, data: { biz_code, biz_data: { id, ... } } }
+           body: {}                                              [OBSERVED 2026-08-20]
+           (some responses wrap the session under biz_data.chat_session.{id,...} — read both)
 CHAT (per request):
-  POST /api/v0/chat/completion                -> SSE stream [OBSERVED]
-  POST /api/v0/chat/update_session            -> { chat_session_id, response_message_id } [OBSERVED]
+  POST /api/v0/chat/create_pow_challenge      -> { code, data: { biz_data: { challenge } } } [OBSERVED 2026-08-20]
+           body: { "target_path": "/api/v0/chat/completion" }
+  POST /api/v0/chat/completion                -> SSE stream [OBSERVED 2026-08-20]
+           requires x-client-version + x-ds-pow-response; a bare POST returns
+           {"code":40300,"msg":"MISSING_HEADER"} — the old ping-handshake is dead.
 TEARDOWN (currently unused by us):
   GET  /api/v0/chat/stop_stream?chunk_id=chat_agent&last_messaged_id={response_message_id}
   GET  /api/v0/chat/delete_session?chat_session_id={id}              [OBSERVED]
@@ -56,17 +65,14 @@ Request headers sent on every API call [REF-DERIVED from interceptor slices]:
 | Header | Value |
 |---|---|
 | `authorization` | `Bearer {token}` — `user.token` from the login response [OBSERVED]. Our provider intercepts it from the logged-in tab instead of logging in [design]. |
-| `x-app-version` | `20250620.0` (the version baked into both the reference and our interceptor) [OBSERVED] |
-| `x-client-version` | `1.0.0-alpha-20250620-01` (versioned; the reference bumps the patch per commit) [OBSERVED] |
+| `x-client-version` | `2.3.0` — the current SPA version; REQUIRED on `/completion` (a missing/old value returns `{"code":40300,"msg":"MISSING_HEADER"}`). Sent on all `/api/v0/` calls [OBSERVED 2026-08-20]. The provider constant `DEEPSEEK_X_CLIENT_VERSION` in `src/providers/deepseek/client.ts` must be bumped when the SPA ships a new version. |
+| `x-ds-pow-response` | Only on `/completion`: base64 of JSON `{ algorithm, challenge, salt, answer, signature, target_path }` — REQUIRED on every completion POST now (challenge obtained from `/api/v0/chat/create_pow_challenge`, not from a ping event) [OBSERVED 2026-08-20] |
 | `origin` | `https://chat.deepseek.com` [REF-DERIVED] |
 | `referer` | `https://chat.deepseek.com/` [REF-DERIVED] |
 | `user-agent` | **Optional**; presence not required [REF-DERIVED] |
-| `x-ds-pow-response` | Only on `/completion`: base64 of JSON `{ algorithm, challenge, salt, answer, signature, target_path }` [OBSERVED, exact structure REF-DERIVED] |
 
-X-Client-Version provenance [REF-DERIVED]:
-- commit `de1a1e1`: `1.0.0-alpha-20250110-310` — used for `reasoning`, default/expert `model_type`, `search`.
-- later commits: `1.0.0-alpha-20250207-449`, `1.0.0-alpha-20250620-01` — the last (20250620-01) is ours.
-- Sending an OLD x-client-version can break `model_type=expert` and search (server-side feature gating). Keep ours current.
+X-Client-Version provenance [OBSERVED 2026-08-20]:
+- current SPA build (`commit-id` 7288e7c) sends `x-client-version: 2.3.0` on every `/api/v0/` request; `x-app-version` is NO LONGER sent.
 
 `origin`/`referer` and `user-agent`: the reference sends them, but their absence was never reproved
 to break anything in captures [INFERRED — keep sending them, zero cost].
@@ -75,30 +81,33 @@ to break anything in captures [INFERRED — keep sending them, zero cost].
 
 ## 3. PoW flow
 
-First SSE event on `/completion` is a `ping` event whose `data` is the PoW challenge [OBSERVED]:
+The challenge comes from `POST /api/v0/chat/create_pow_challenge` with body
+`{"target_path":"/api/v0/chat/completion"}` [OBSERVED 2026-08-20]:
 
 ```
-event: ping
-data: {"v":{"response":{"algorithm":"DeepSeekHashV1","challenge":"xyz...","salt":"0b3...",
-      "signature":"ierxx8...","difficulty":144000,"expire_at":300000,"target_path":"/?q=..."}}}
+{"code":0,"data":{"biz_data":{"challenge":{"algorithm":"DeepSeekHashV1","challenge":"xyz...",
+  "salt":"0b3...","signature":"ierxx8...","difficulty":144000,"expire_at":1787223141653,
+  "expire_after":300000,"target_path":"/api/v0/chat/completion"}}}}
 ```
 
-Fields: `algorithm` = `DeepSeekHashV1` | `sha256`; `difficulty` 144000-class; `expire_at` 300000 (ms).
-On `sha256` challenge difficulty>1000 is log2-scaled in the solver — a solver detail, not wire [REF-DERIVED].
+Fields: `algorithm` = `DeepSeekHashV1` | `sha256`; `difficulty` 144000-class; `expire_at` (ms epoch);
+`expire_after` 300000 (ms). On a `sha256` challenge with difficulty > 1000 the solver log2-scales
+it — a solver detail, not wire [REF-DERIVED].
 
-Solve: find `answer` such that the hash matches the target; then send the solved PoW in the completion
-request via `x-ds-pow-response` = base64(JSON) of:
+Solve: find `answer` such that the hash matches the target; then send the solved PoW on the
+completion request via `x-ds-pow-response` = base64(JSON) of:
 
 ```
-{"algorithm": "...", "challenge": "...", "salt": "...", "answer": <int>, "signature": "...", "target_path": "..."}
+{"algorithm": "...", "challenge": "...", "salt": "...", "answer": <int>, "signature": "...", "target_path": "...", "difficulty": ..., "expire_at": ...}
 ```
 
-Both implementations send extra echo fields (`difficulty`, `expire_at`) — harmless, server accepts [REF-DERIVED].
+The extra echo fields (`difficulty`, `expire_at`) are harmless — the server accepts them [REF-DERIVED].
 
-Flow [OBSERVED]:
-1. POST /completion WITHOUT the PoW header → first SSE event is `ping` (challenge).
-2. Solve, POST /completion WITH `x-ds-pow-response` → first SSE event is `ready`.
-3. If the challenge was never sent (e.g. error page): POST again without the header; eventually the ping arrives.
+Flow [OBSERVED 2026-08-20]:
+1. POST /completion WITHOUT the PoW header → `{"code":40300,"msg":"MISSING_HEADER"}` (HTTP 200).
+   There is NO ping-first-SSE-event handshake anymore; the old `event: ping` flow is dead.
+2. POST /create_pow_challenge (target_path = completion) → solve → POST /completion with
+   `x-ds-pow-response` → first SSE event is `event: ready`; the same response continues streaming.
 
 ---
 

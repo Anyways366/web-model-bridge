@@ -5,7 +5,7 @@ import { solvePow, buildPowResponse, type DeepSeekPowChallenge } from './pow.js'
 import { buildDeepSeekPrompt, resolveDeepSeekModel } from './tools.js';
 import { parseDeepSeekStream } from './sse.js';
 import { DeepSeekSessionStore, advanceSession, type DeepSeekSessionState } from './session.js';
-import { DEEPSEEK_WEB_BASE_URL, DEEPSEEK_LOGIN_URL, DEEPSEEK_API_CREATE_SESSION, DEEPSEEK_API_COMPLETION } from './client.js';
+import { DEEPSEEK_WEB_BASE_URL, DEEPSEEK_LOGIN_URL, DEEPSEEK_API_CREATE_SESSION, DEEPSEEK_API_CREATE_POW_CHALLENGE, DEEPSEEK_API_COMPLETION, DEEPSEEK_X_CLIENT_VERSION } from './client.js';
 import { AuthStore } from '../../auth/store.js';
 import type { Page } from 'playwright-core';
 
@@ -17,15 +17,14 @@ const MAX_POW_ATTEMPTS = 3;
  *
  * Wire contract: docs/deepseek-web-wire-spec.md (frozen).
  * Network surface (localhost-only from OpenCode's perspective, same-origin
- * browser fetches only): page origin + POST /api/v0/chat/create_session +
- * POST /api/v0/chat/completion. No other destinations, no telemetry, no
+ * browser fetches only): page origin + POST /api/v0/chat_session/create +
+ * POST /api/v0/chat/create_pow_challenge + POST /api/v0/chat/completion. No other destinations, no telemetry, no
  * account rotation, no proxying, no fingerprint handling.
  */
 
 interface EvaluateResult {
-  kind: 'stream' | 'challenge' | 'error';
+  kind: 'stream' | 'error';
   data?: string;
-  challenge?: DeepSeekPowChallenge;
   status?: number;
   code?: string;
   message?: string;
@@ -134,6 +133,7 @@ export class DeepSeekProvider extends BaseProvider {
         ref_file_ids: [],
         thinking_enabled: cfg.thinking,
         search_enabled: false,
+        action: null,
         preempt: false,
       };
 
@@ -196,11 +196,14 @@ export class DeepSeekProvider extends BaseProvider {
     return tokenPromise;
   }
 
-  /** POST /api/v0/chat/create_session (empty body) → chat_session_id. */
+  /** POST /api/v0/chat_session/create (empty body) → chat_session_id. */
   private async createSession(page: Page, bearer: string): Promise<string | null> {
     const res = await page.evaluate(
-      async (args: { endpoint: string; bearerToken: string }): Promise<{ sessionId?: string; error?: string }> => {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      async (args: { endpoint: string; bearerToken: string; clientVersion: string }): Promise<{ sessionId?: string; error?: string }> => {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'x-client-version': args.clientVersion,
+        };
         if (args.bearerToken) headers['Authorization'] = `Bearer ${args.bearerToken}`;
         try {
           const r = await fetch(args.endpoint, {
@@ -211,43 +214,97 @@ export class DeepSeekProvider extends BaseProvider {
           });
           if (!r.ok) return { error: `HTTP ${r.status}` };
           const data = await r.json();
-          const sessionId = data?.data?.chat_session_id ?? data?.data?.id ?? data?.chat_session_id ?? null;
+          const dial = data?.data?.biz_data;
+          const sessionId = dial?.chat_session?.id ?? dial?.id ?? data?.data?.id ?? data?.id ?? null;
           return sessionId ? { sessionId } : { error: 'no session id' };
         } catch (e: unknown) {
           return { error: (e as Error).message };
         }
       },
-      { endpoint: DEEPSEEK_API_CREATE_SESSION, bearerToken: bearer },
+      { endpoint: DEEPSEEK_API_CREATE_SESSION, bearerToken: bearer, clientVersion: DEEPSEEK_X_CLIENT_VERSION },
     );
     if (res.error || !res.sessionId) return null;
     return res.sessionId;
   }
 
   /**
-   * Completion with PoW handshake (frozen spec §3): the first SSE event of a
-   * bare POST is the `ping` challenge; solve it (node-side) and re-POST with
-   * `x-ds-pow-response`. At most MAX_POW_ATTEMPTS requests — never an
-   * unbounded retry loop. When the first event is `ready` (no PoW needed),
-   * the same response continues streaming and is consumed fully.
+   * Completion with PoW (wire spec §3, corrected against live observation
+   * 2026-08-20): DeepSeek now requires a solved PoW on every completion; a
+   * bare POST is answered with `{"code":40300,"msg":"MISSING_HEADER"}` — the
+   * old ping-first-SSE-event handshake is dead. Today's flow: fetch a
+   * challenge from /api/v0/chat/create_pow_challenge (target_path = the
+   * completion endpoint), solve it node-side, then send the ONE completion
+   * POST with `x-ds-pow-response` set. All /api/v0 calls carry
+   * `x-client-version` (the SPA sends it on every request). At most
+   * MAX_POW_ATTEMPTS challenge cycles — never an unbounded retry loop.
    */
   private async completionWithPow(
     page: Page,
     body: Record<string, unknown>,
     bearer: string,
   ): Promise<EvaluateResult> {
-    let powHeader: string | null = null;
     for (let attempt = 0; attempt < MAX_POW_ATTEMPTS; attempt++) {
+      // 1) Fetch a fresh challenge for the completion target.
+      const challengeRes = await page.evaluate(
+        async (args: { endpoint: string; bearerToken: string; clientVersion: string }): Promise<{
+          challenge?: DeepSeekPowChallenge;
+          error?: string;
+        }> => {
+          try {
+            const headers: Record<string, string> = {
+              'Content-Type': 'application/json',
+              'x-client-version': args.clientVersion,
+            };
+            if (args.bearerToken) headers['Authorization'] = `Bearer ${args.bearerToken}`;
+            const res = await fetch(args.endpoint, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ target_path: '/api/v0/chat/completion' }),
+              credentials: 'include',
+            });
+            const json = await res.json();
+            const ch = json?.data?.biz_data?.challenge as DeepSeekPowChallenge | undefined;
+            if (!res.ok) return { error: `HTTP ${res.status}` };
+            if (!ch || typeof ch.challenge !== 'string' || typeof ch.algorithm !== 'string') {
+              return { error: 'no challenge in response' };
+            }
+            return { challenge: ch };
+          } catch (e: unknown) {
+            return { error: (e as Error).message };
+          }
+        },
+        { endpoint: DEEPSEEK_API_CREATE_POW_CHALLENGE, bearerToken: bearer, clientVersion: DEEPSEEK_X_CLIENT_VERSION },
+      );
+      if (challengeRes.error) {
+        return { kind: 'error', status: 0, code: 'pow', message: challengeRes.error };
+      }
+
+      // 2) Solve and build the response header.
+      const challenge = challengeRes.challenge!;
+      let powHeader: string;
+      try {
+        const answer = await solvePow(challenge);
+        powHeader = buildPowResponse(challenge, answer, challenge.target_path ?? '/api/v0/chat/completion');
+      } catch (err) {
+        return { kind: 'error', status: 0, code: 'pow', message: `PoW solve failed: ${(err as Error).message}` };
+      }
+
+      // 3) Single completion POST with the solved PoW (no ping handshake).
       const res = await page.evaluate(
         async (args: {
           endpoint: string;
           body: Record<string, unknown>;
           bearerToken: string;
-          powHeader: string | null;
+          powHeader: string;
+          clientVersion: string;
         }): Promise<EvaluateResult> => {
           try {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            const headers: Record<string, string> = {
+              'Content-Type': 'application/json',
+              'x-client-version': args.clientVersion,
+              'x-ds-pow-response': args.powHeader,
+            };
             if (args.bearerToken) headers['Authorization'] = `Bearer ${args.bearerToken}`;
-            if (args.powHeader) headers['x-ds-pow-response'] = args.powHeader;
 
             const res = await fetch(args.endpoint, {
               method: 'POST',
@@ -265,46 +322,6 @@ export class DeepSeekProvider extends BaseProvider {
             const decoder = new TextDecoder();
             let buf = '';
 
-            // Probe: read until the first complete SSE event block (`\n\n`)
-            // or EOF — this decides ping vs. live stream.
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              buf += decoder.decode(value, { stream: true });
-              const blank = buf.search(/\n\s*\n/);
-              if (blank >= 0 || buf.length > 65536) break;
-            }
-
-            const firstBlock = buf.slice(0, buf.search(/\n\s*\n/));
-            const firstData = firstBlock
-              .split('\n')
-              .map((l) => l.trim())
-              .find((l) => l.startsWith('data: '))
-              ?.slice(6);
-            if (firstData && !args.powHeader) {
-              try {
-                const parsed = JSON.parse(firstData);
-                const v = (parsed as Record<string, unknown>)?.v as Record<string, unknown> | undefined;
-                const response = v?.response as Record<string, unknown> | undefined;
-                if (response && typeof response.challenge === 'string' && typeof response.algorithm === 'string') {
-                  return {
-                    kind: 'challenge',
-                    challenge: {
-                      algorithm: response.algorithm as string,
-                      challenge: response.challenge as string,
-                      difficulty: typeof response.difficulty === 'number' ? response.difficulty : 0,
-                      salt: response.salt as string,
-                      signature: response.signature as string,
-                      ...(typeof response.expire_at === 'number' ? { expire_at: response.expire_at } : {}),
-                    },
-                  };
-                }
-              } catch {
-                // Not a challenge frame — fall through and stream the body.
-              }
-            }
-
-            // Live stream (ready or later): consume the remainder.
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -316,19 +333,12 @@ export class DeepSeekProvider extends BaseProvider {
             return { kind: 'error', status: 0, message: (e as Error).message };
           }
         },
-        { endpoint: DEEPSEEK_API_COMPLETION, body, bearerToken: bearer, powHeader },
+        { endpoint: DEEPSEEK_API_COMPLETION, body, bearerToken: bearer, powHeader, clientVersion: DEEPSEEK_X_CLIENT_VERSION },
       );
 
-      if (res.kind === 'challenge' && res.challenge) {
-        try {
-          const answer = await solvePow(res.challenge);
-          powHeader = buildPowResponse(res.challenge, answer, '/api/v0/chat/completion');
-          continue;
-        } catch (err) {
-          return { kind: 'error', status: 0, code: 'pow', message: `PoW solve failed: ${(err as Error).message}` };
-        }
+      if (res.kind === 'error' && (res.message ?? '').includes('INVALID_POW')) {
+        continue; // stale challenge — refetch and retry (bounded).
       }
-      if (res.kind === 'error') return res;
       return res;
     }
     return { kind: 'error', status: 0, code: 'pow', message: 'PoW challenge loop exceeded attempts' };

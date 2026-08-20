@@ -47,6 +47,7 @@ function buildCompletionBody(sessionId: string, parentMessageId: number | null, 
     ref_file_ids: [],
     thinking_enabled: false,
     search_enabled: false,
+    action: null,
     preempt: false,
   };
 }

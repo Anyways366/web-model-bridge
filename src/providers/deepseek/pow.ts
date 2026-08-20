@@ -10,6 +10,7 @@ export interface DeepSeekPowChallenge {
   salt: string;
   signature: string;
   expire_at?: number;
+  target_path?: string;
 }
 
 interface DeepSeekWasmExports {

@@ -10,10 +10,11 @@ import { describe, it, expect } from 'vitest';
  * Wire facts:
  *   - POST /api/v0/chat/completion body:
  *     { chat_session_id, parent_message_id, model_type, prompt,
- *       ref_file_ids, thinking_enabled, search_enabled, preempt }
+ *       ref_file_ids, thinking_enabled, search_enabled, action, preempt }
  *   - first turn: parent_message_id null (capture shows explicit null)
  *   - ref_file_ids: always present, [] when nothing was uploaded
  *   - model_type values: "default" | "expert" | "vision"
+ *   - action: explicit null (SPA sends it on every completion)
  *   - our provider defaults: thinking on reasoner-named ids only,
  *     search_enabled false (frozen spec §12)
  */
@@ -26,6 +27,7 @@ interface CompletionBody {
   ref_file_ids: string[];
   thinking_enabled: boolean;
   search_enabled: boolean;
+  action: null;
   preempt: boolean;
 }
 
@@ -38,6 +40,7 @@ function body(overrides: Partial<CompletionBody> = {}): CompletionBody {
     ref_file_ids: [],
     thinking_enabled: false,
     search_enabled: false,
+    action: null,
     preempt: false,
     ...overrides,
   };
@@ -53,6 +56,7 @@ describe('deepseek completion request body (frozen wire contract)', () => {
       ref_file_ids: [],
       thinking_enabled: false,
       search_enabled: false,
+      action: null,
       preempt: false,
     });
   });
